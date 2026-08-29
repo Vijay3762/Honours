@@ -1,0 +1,8 @@
+# Ignore everything in this directory
+*
+
+# But allow .f files
+!*.f
+
+# Allow this .gitignore itself to be tracked
+!.gitignore
