@@ -1,9 +1,0 @@
-# Ignore everything in this directory
-*
-
-# Allow only .f (filelist) and .v (Verilog) files
-!*.f
-!*.v
-
-# Allow this .gitignore itself to be tracked
-!.gitignore
