@@ -1,134 +1,284 @@
 # ============================================================
-# VCS / Synopsys generated files
+# RISC-V CNN SoC - Honours Project
+# Git Ignore File
 # ============================================================
 
-csrc/
+
+# ============================================================
+# VCS / Synopsys Simulation Generated Files
+# ============================================================
+
+# VCS executable and generated simulation files
 simv
-simv_*
+simv.*
+simv.daidir/
+
+# VCS compilation directory
+csrc/
 *.daidir/
+
+# VCS DVE files
+DVEfiles/
+
+# VCS UCLI
 ucli.key
 
-# VCS compilation / elaboration databases
-*.sdb
-*.db
-*.dat
+# VCS waveform/database files
+*.vpd
+*.fsdb
+*.vcd
+*.wlf
+
+# VCS coverage files
+urgReport/
+coverage/
+simv.vdb/
+
+# VCS generated libraries
 *.so
-*.o
 *.a
 
-# VCS generated files
-vcs.log
-vcs_compile.log
-vcs_sim.log
-*.vpd
-*.vcd
-*.fsdb
-
-# VCS generated directories/files
-DVEfiles/
-AN.DB/
-64/
-synopsys_sim.setup
+# Keep simulation directory structure
+sim/vcs/*
+!sim/vcs/.gitkeep
 
 
 # ============================================================
-# Verdi / Novas generated files
-# ============================================================
-
-verdiLog/
-novas.conf
-novas.rc
-
-# Verdi session / waveform files
-*.ses
-*.ses.config
-*.ses.wave.*
-*.diag
-*.diagnose
-*.wave
-*.sxl
-
-
-# ============================================================
-# Simulation logs
+# Verilog / SystemVerilog Simulator Generated Files
 # ============================================================
 
 *.log
-*.log.*
-*.out
+*.jou
+*.history
+*.key
 
-
-# ============================================================
-# Temporary files
-# ============================================================
-
+# Temporary simulator files
 *.tmp
-*.temp
 *.bak
-*.backup
 *.swp
 *.swo
 *~
-.#*
-.~lock.*
 
 
 # ============================================================
-# Editor / IDE files
+# Compiled Object / Executable Files
 # ============================================================
 
-.vscode/
-.idea/
-*.code-workspace
+*.o
+*.obj
+*.elf
+*.out
+*.exe
 
 
 # ============================================================
-# Python generated files
+# Generated RISC-V Program Files
+# ============================================================
+
+# Do NOT ignore .hex because the program image is useful
+# for reproducing the VeeR simulation.
+#
+# program.hex
+
+
+# ============================================================
+# Python Generated Files
 # ============================================================
 
 __pycache__/
 *.py[cod]
 *$py.class
-.pytest_cache/
+
+# Python virtual environments
+.venv/
+venv/
+env/
+ENV/
 
 
 # ============================================================
-# Generic build directories
+# C / C++ Build Files
 # ============================================================
 
-build/
-dist/
-out/
-bin/
+*.d
+*.gcda
+*.gcno
+*.gcov
 
-
-# ============================================================
-# Coverage / profiling output
-# ============================================================
-
-coverage/
-cov/
-*.cov
-*.ucdb
-*.vdb
-*.saif
+# CMake generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+*.cmake
 
 
 # ============================================================
-# OS generated files
+# FPGA / EDA Generated Files
+# ============================================================
+
+# Vivado
+.vivado/
+vivado.log
+vivado.jou
+vivado_pid*.str
+*.runs/
+*.cache/
+*.hw/
+*.xpr
+*.xsa
+
+# Quartus
+.qsys_edit/
+db/
+incremental_db/
+*.qpf
+*.qsf
+*.sof
+
+# Questa / ModelSim
+transcript
+vsim.wlf
+work/
+*.wlf
+
+
+# ============================================================
+# Synopsys Generated Files
+# ============================================================
+
+*.pvl
+*.syn
+*.mr
+*.svf
+
+# Design Compiler
+alib-*
+*.synopsys_*
+
+# Verdi
+novas.conf
+novas.rc
+.verdi/
+
+
+# ============================================================
+# Editor / IDE Files
+# ============================================================
+
+# Vim
+*.swp
+*.swo
+*~
+
+# VS Code
+.vscode/
+
+# IntelliJ / CLion
+.idea/
+
+# Eclipse
+.project
+.cproject
+.settings/
+
+
+# ============================================================
+# Operating System Files
 # ============================================================
 
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
 Thumbs.db
+ehthumbs.db
+Desktop.ini
 
 
 # ============================================================
-# Misc generated simulation files
+# Temporary / Backup Files
 # ============================================================
 
-*.checkpoint
-*.rpt
-*.jou
-*.str
-*.pb
-*.history
+*.bak
+*.backup
+*.orig
+*.rej
+*.patch
+
+# Generic temporary directories
+tmp/
+temp/
+.tmp/
+
+
+# ============================================================
+# Logs
+# ============================================================
+
+*.log
+logs/
+
+
+# ============================================================
+# Personal / Local Configuration
+# ============================================================
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# Local machine configuration
+local/
+.local/
+
+
+# ============================================================
+# Project-Specific Generated Files
+# ============================================================
+
+# Generated VCS simulation outputs
+sim/vcs/csrc/
+sim/vcs/DVEfiles/
+sim/vcs/urgReport/
+sim/vcs/simv*
+sim/vcs/*.log
+sim/vcs/*.vpd
+sim/vcs/*.fsdb
+sim/vcs/*.vcd
+
+# Generated waveform files
+waves/
+waveforms/
+
+
+# ============================================================
+# VeeR-EL2 External Build / Configuration
+# ============================================================
+
+# Do not commit an external VeeR checkout if it is placed
+# inside the project directory.
+Cores-VeeR-EL2/
+
+# VeeR generated configuration snapshots
+snapshots/
+
+# If a VeeR checkout is kept elsewhere and RV_ROOT points
+# to it, these entries have no effect on the external repo.
+
+
+# ============================================================
+# Preserve Empty Directories
+# ============================================================
+
+!.gitkeep
+
+# Generated test/build files
+*.o
+*.elf
+
+# Generated build files
+*.o
+*.elf
