@@ -322,6 +322,7 @@ reg [BUSER_WIDTH-1:0] axi_buser_reg = {BUSER_WIDTH{1'b0}}, axi_buser_next;
 reg [S_COUNT-1:0] s_axi_awready_reg = 0, s_axi_awready_next;
 reg [S_COUNT-1:0] s_axi_wready_reg = 0, s_axi_wready_next;
 reg [S_COUNT-1:0] s_axi_bvalid_reg = 0, s_axi_bvalid_next;
+reg [S_COUNT-1:0] s_axi_rvalid_reg = 1'b0, s_axi_rvalid_next;
 reg [S_COUNT-1:0] s_axi_arready_reg = 0, s_axi_arready_next;
 
 reg [M_COUNT-1:0] m_axi_awvalid_reg = 0, m_axi_awvalid_next;
@@ -331,6 +332,8 @@ reg [M_COUNT-1:0] m_axi_rready_reg = 0, m_axi_rready_next;
 
 // internal datapath
 reg  [ID_WIDTH-1:0]    s_axi_rid_int;
+reg                     txn_rsp_done;  // the response of the current transaction was accepted
+reg                     txn_rsp_done_next;
 reg  [DATA_WIDTH-1:0]  s_axi_rdata_int;
 reg  [1:0]             s_axi_rresp_int;
 reg                    s_axi_rlast_int;
@@ -384,6 +387,15 @@ assign m_axi_rready = m_axi_rready_reg;
 
 // slave side mux
 wire [(CL_S_COUNT > 0 ? CL_S_COUNT-1 : 0):0] s_select;
+
+// The master that owns the running transaction.  It is captured when the
+// transaction is granted: the arbiter may move the grant to another channel
+// (or to another master) as soon as the master drops its request, and the
+// response of the running transaction still has to go to the master that
+// asked for it.
+reg  [(CL_S_COUNT > 0 ? CL_S_COUNT-1 : 0):0] s_sel_reg;
+reg  [(CL_S_COUNT > 0 ? CL_S_COUNT-1 : 0):0] s_sel_reg_next;
+wire [(CL_S_COUNT > 0 ? CL_S_COUNT-1 : 0):0] s_select_t = s_sel_reg;
 
 wire [ID_WIDTH-1:0]     current_s_axi_awid      = s_axi_awid[s_select*ID_WIDTH +: ID_WIDTH];
 wire [ADDR_WIDTH-1:0]   current_s_axi_awaddr    = s_axi_awaddr[s_select*ADDR_WIDTH +: ADDR_WIDTH];
@@ -488,7 +500,7 @@ arbiter #(
     .PORTS(S_COUNT*2),
     .ARB_TYPE_ROUND_ROBIN(1),
     .ARB_BLOCK(1),
-    .ARB_BLOCK_ACK(1),
+    .ARB_BLOCK_ACK(0),
     .ARB_LSB_HIGH_PRIORITY(1)
 )
 arb_inst (
@@ -545,6 +557,16 @@ always @* begin
     s_axi_bvalid_next = s_axi_bvalid_reg & ~s_axi_bready;
     s_axi_arready_next = 0;
 
+    // The response of the current transaction has been accepted by the
+    // master.  This is the sticky version of the acknowledge: a master may
+    // drop its request (or switch from a write to a read) before the
+    // response has been accepted, in which case the arbiter moves the grant
+    // and the acknowledge would be lost.
+    s_sel_reg_next = s_sel_reg;
+    txn_rsp_done_next = txn_rsp_done |
+                        (|(s_axi_bvalid_reg & s_axi_bready)) |
+                        (|(s_axi_rvalid_reg & s_axi_rready));
+
     m_axi_awvalid_next = m_axi_awvalid_reg & ~m_axi_awready;
     m_axi_bready_next = 0;
     m_axi_arvalid_next = m_axi_arvalid_reg & ~m_axi_arready;
@@ -567,9 +589,11 @@ always @* begin
         STATE_IDLE: begin
             // idle state; wait for arbitration
 
-            if (grant_valid) begin
+            if (grant_valid && ((read && current_s_axi_arvalid) || (!read && current_s_axi_awvalid))) begin
 
                 axi_addr_valid_next = 1'b1;
+                txn_rsp_done_next  = 1'b0;
+                s_sel_reg_next     = s_select;
 
                 if (read) begin
                     // reading
@@ -629,7 +653,7 @@ always @* begin
                     state_next = STATE_READ;
                 end else begin
                     // writing
-                    s_axi_wready_next[s_select] = m_axi_wready_int_early;
+                    s_axi_wready_next[s_select_t] = m_axi_wready_int_early;
                     state_next = STATE_WRITE;
                 end
             end else begin
@@ -640,14 +664,14 @@ always @* begin
                 end else begin
                     // writing
                     axi_bresp_next = 2'b11;
-                    s_axi_wready_next[s_select] = 1'b1;
+                    s_axi_wready_next[s_select_t] = 1'b1;
                     state_next = STATE_WRITE_DROP;
                 end
             end
         end
         STATE_WRITE: begin
             // write state; store and forward write data
-            s_axi_wready_next[s_select] = m_axi_wready_int_early;
+            s_axi_wready_next[s_select_t] = m_axi_wready_int_early;
 
             if (axi_addr_valid_reg) begin
                 m_axi_awvalid_next[m_select_reg] = 1'b1;
@@ -662,7 +686,7 @@ always @* begin
                 m_axi_wvalid_int = 1'b1;
 
                 if (current_s_axi_wlast) begin
-                    s_axi_wready_next[s_select] = 1'b0;
+                    s_axi_wready_next[s_select_t] = 1'b0;
                     m_axi_bready_next[m_select_reg] = 1'b1;
                     state_next = STATE_WRITE_RESP;
                 end else begin
@@ -679,7 +703,7 @@ always @* begin
             if (current_m_axi_bready && current_m_axi_bvalid) begin
                 m_axi_bready_next[m_select_reg] = 1'b0;
                 axi_bresp_next = current_m_axi_bresp;
-                s_axi_bvalid_next[s_select] = 1'b1;
+                s_axi_bvalid_next[s_select_t] = 1'b1;
                 state_next = STATE_WAIT_IDLE;
             end else begin
                 state_next = STATE_WRITE_RESP;
@@ -687,13 +711,13 @@ always @* begin
         end
         STATE_WRITE_DROP: begin
             // write drop state; drop write data
-            s_axi_wready_next[s_select] = 1'b1;
+            s_axi_wready_next[s_select_t] = 1'b1;
 
             axi_addr_valid_next = 1'b0;
 
             if (current_s_axi_wready && current_s_axi_wvalid && current_s_axi_wlast) begin
-                s_axi_wready_next[s_select] = 1'b0;
-                s_axi_bvalid_next[s_select] = 1'b1;
+                s_axi_wready_next[s_select_t] = 1'b0;
+                s_axi_bvalid_next[s_select_t] = 1'b1;
                 state_next = STATE_WAIT_IDLE;
             end else begin
                 state_next = STATE_WRITE_DROP;
@@ -749,8 +773,13 @@ always @* begin
         end
         STATE_WAIT_IDLE: begin
             // wait for idle state; wait untl grant valid is deasserted
+            //
+            // txn_rsp_done is the "sticky" acknowledge: a master may drop
+            // its request (or switch from a write to a read) before the
+            // response has been accepted, in which case the arbiter moves
+            // the grant and the acknowledge would be lost.
 
-            if (!grant_valid || acknowledge) begin
+            if (!grant_valid || acknowledge || txn_rsp_done) begin
                 state_next = STATE_IDLE;
             end else begin
                 state_next = STATE_WAIT_IDLE;
@@ -762,6 +791,8 @@ end
 always @(posedge clk) begin
     if (rst) begin
         state_reg <= STATE_IDLE;
+        txn_rsp_done <= 1'b0;
+        s_sel_reg <= '0;
 
         s_axi_awready_reg <= 0;
         s_axi_wready_reg <= 0;
@@ -774,6 +805,8 @@ always @(posedge clk) begin
         m_axi_rready_reg <= 0;
     end else begin
         state_reg <= state_next;
+        txn_rsp_done <= txn_rsp_done_next;
+        s_sel_reg <= s_sel_reg_next;
 
         s_axi_awready_reg <= s_axi_awready_next;
         s_axi_wready_reg <= s_axi_wready_next;
@@ -809,7 +842,6 @@ reg [DATA_WIDTH-1:0]  s_axi_rdata_reg  = {DATA_WIDTH{1'b0}};
 reg [1:0]             s_axi_rresp_reg  = 2'd0;
 reg                   s_axi_rlast_reg  = 1'b0;
 reg [RUSER_WIDTH-1:0] s_axi_ruser_reg  = 1'b0;
-reg [S_COUNT-1:0]     s_axi_rvalid_reg = 1'b0, s_axi_rvalid_next;
 
 reg [ID_WIDTH-1:0]    temp_s_axi_rid_reg    = {ID_WIDTH{1'b0}};
 reg [DATA_WIDTH-1:0]  temp_s_axi_rdata_reg  = {DATA_WIDTH{1'b0}};
@@ -831,7 +863,10 @@ assign s_axi_ruser = {S_COUNT{RUSER_ENABLE ? s_axi_ruser_reg : {RUSER_WIDTH{1'b0
 assign s_axi_rvalid = s_axi_rvalid_reg;
 
 // enable ready input next cycle if output is ready or the temp reg will not be filled on the next cycle (output reg empty or no input)
-assign s_axi_rready_int_early = current_s_axi_rready | (~temp_s_axi_rvalid_reg & (~current_s_axi_rvalid | ~s_axi_rvalid_int));
+wire current_s_axi_rready_t = s_axi_rready[s_select_t];
+wire current_s_axi_rvalid_t = s_axi_rvalid[s_select_t];
+
+assign s_axi_rready_int_early = current_s_axi_rready_t | (~temp_s_axi_rvalid_reg & (~current_s_axi_rvalid_t | ~s_axi_rvalid_int));
 
 always @* begin
     // transfer sink ready state to source
@@ -844,18 +879,18 @@ always @* begin
 
     if (s_axi_rready_int_reg) begin
         // input is ready
-        if (current_s_axi_rready | ~current_s_axi_rvalid) begin
+        if (current_s_axi_rready_t | ~current_s_axi_rvalid_t) begin
             // output is ready or currently not valid, transfer data to output
-            s_axi_rvalid_next[s_select] = s_axi_rvalid_int;
+            s_axi_rvalid_next[s_select_t] = s_axi_rvalid_int;
             store_axi_r_int_to_output = 1'b1;
         end else begin
             // output is not ready, store input in temp
             temp_s_axi_rvalid_next = s_axi_rvalid_int;
             store_axi_r_int_to_temp = 1'b1;
         end
-    end else if (current_s_axi_rready) begin
+    end else if (current_s_axi_rready_t) begin
         // input is not ready, but output is ready
-        s_axi_rvalid_next[s_select] = temp_s_axi_rvalid_reg;
+        s_axi_rvalid_next[s_select_t] = temp_s_axi_rvalid_reg;
         temp_s_axi_rvalid_next = 1'b0;
         store_axi_r_temp_to_output = 1'b1;
     end

@@ -1,4 +1,4 @@
-+incdir+$RV_ROOT/snapshots/default
++incdir+rtl/cpu/veer_el2/config
 +incdir+rtl/cpu/veer_el2/include
 +incdir+rtl/cpu/veer_el2/lib
 +incdir+rtl/cpu/veer_el2/dmi

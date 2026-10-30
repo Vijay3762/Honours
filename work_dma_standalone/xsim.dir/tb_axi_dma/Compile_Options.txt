@@ -1,0 +1,1 @@
+-debug "typical" -timescale "1ns/1ps" -snapshot "tb_axi_dma" -log "elaborate_dma_standalone.log" "tb_axi_dma" 

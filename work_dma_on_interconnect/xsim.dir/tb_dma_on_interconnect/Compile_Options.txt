@@ -1,0 +1,1 @@
+-debug "typical" -timescale "1ns/1ps" -snapshot "tb_dma_on_interconnect" -log "elaborate.log" "tb_dma_on_interconnect" 
