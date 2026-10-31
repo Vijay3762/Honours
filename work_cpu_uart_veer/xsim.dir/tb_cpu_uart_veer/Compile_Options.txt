@@ -1,1 +1,0 @@
--debug "typical" -timescale "1ns/1ps" -snapshot "tb_cpu_uart_veer" -log "elaborate.log" "tb_cpu_uart_veer" 

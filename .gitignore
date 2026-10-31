@@ -1,105 +1,147 @@
 # ============================================================
 # RISC-V CNN SoC - Honours Project
-# Git Ignore File
+# Comprehensive .gitignore
 # ============================================================
 
+# ------------------------------------------------------------
+# 1. Simulation Work & Run Directories
+# ------------------------------------------------------------
+# Vivado / XSim simulation directories
+gpio_sim/
+work_*/
+work/
+sim/
+sim_*/
+run/
 
-# ============================================================
-# VCS / Synopsys Simulation Generated Files
-# ============================================================
-
-# VCS executable and generated simulation files
-simv
-simv.*
-simv.daidir/
-
-# VCS compilation directory
+# Synopsys VCS compilation & execution work directories
 csrc/
 *.daidir/
-
-# VCS DVE files
+simv.daidir/
+simv_*.daidir/
 DVEfiles/
-
-# VCS UCLI
-ucli.key
-
-# VCS waveform/database files
-*.vpd
-*.fsdb
-*.vcd
-*.wlf
-
-# VCS coverage files
 urgReport/
 coverage/
 simv.vdb/
+*.vdb/
 
-# VCS generated libraries
+# Synopsys Verdi work & log directories
+verdiLog/
+fsdb2vcdLog/
+.verdi/
+
+# Generic temporary & snapshot directories
+tmp/
+temp/
+.tmp/
+snapshots/
+Cores-VeeR-EL2/
+
+# ------------------------------------------------------------
+# 2. Simulator & EDA Generated Files
+# ------------------------------------------------------------
+# Vivado / XSim simulation outputs
+xsim.dir/
+*.wdb
+*.pb
+xsimk
+xsimSettings.ini
+xsim_script.tcl
+Compile_Options.txt
+clockInfo.txt
+
+# Vivado project & run files
+.Xil/
+.vivado/
+vivado*.log
+vivado*.jou
+vivado_pid*.str
+vivado_pid*.zip
+*.runs/
+*.cache/
+*.hw/
+*.ip_user_files/
+*.xpr
+*.xsa
+*.bit
+*.bin
+*.mcs
+*.prm
+webtalk*.log
+webtalk*.jou
+usage_statistics_webtalk.*
+
+# Synopsys VCS simulation outputs & binaries
+simv
+simv.*
+simv_*
+ucli.key
+vc_hdrs.h
+inter.vpd
 *.so
 *.a
 
-# Keep simulation directory structure
-sim/vcs/*
-!sim/vcs/.gitkeep
+# Waveform & dump databases (VCS, Verdi, ModelSim, Questa)
+*.vpd
+*.fsdb
+*.fsdb.*
+*.vcd
+*.evcd
+*.wlf
 
+# Verdi configuration & session files
+novas.conf
+novas.rc
+novas.*
+*.ses
+*.ses.*
+.diagnose.*
 
-# ============================================================
-# Verilog / SystemVerilog Simulator Generated Files
-# ============================================================
+# Questa / ModelSim / Quartus / Icarus
+transcript
+vsim.wlf
+*.vvp
+.qsys_edit/
+db/
+incremental_db/
+*.qpf
+*.qsf
+*.sof
 
+# Synopsys Design Compiler
+*.pvl
+*.syn
+*.mr
+*.svf
+alib-*
+*.synopsys_*
+
+# ------------------------------------------------------------
+# 3. Logs, Diagnostics & Temp Files
+# ------------------------------------------------------------
 *.log
 *.jou
 *.history
 *.key
-
-# Temporary simulator files
 *.tmp
 *.bak
-*.swp
-*.swo
+*.backup
+*.orig
+*.rej
+*.patch
 *~
+logs/
 
-
-# ============================================================
-# Compiled Object / Executable Files
-# ============================================================
-
+# ------------------------------------------------------------
+# 4. RISC-V Firmware & C/C++ Build Artifacts
+# ------------------------------------------------------------
 *.o
 *.obj
 *.elf
 *.out
 *.exe
-
-
-# ============================================================
-# Generated RISC-V Program Files
-# ============================================================
-
-# Do NOT ignore .hex because the program image is useful
-# for reproducing the VeeR simulation.
-#
-# program.hex
-
-
-# ============================================================
-# Python Generated Files
-# ============================================================
-
-__pycache__/
-*.py[cod]
-*$py.class
-
-# Python virtual environments
-.venv/
-venv/
-env/
-ENV/
-
-
-# ============================================================
-# C / C++ Build Files
-# ============================================================
-
+*.dis
+*.map
 *.d
 *.gcda
 *.gcno
@@ -111,69 +153,24 @@ CMakeCache.txt
 cmake_install.cmake
 *.cmake
 
+# Python build & virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+ENV/
 
-# ============================================================
-# FPGA / EDA Generated Files
-# ============================================================
-
-# Vivado
-.vivado/
-vivado.log
-vivado.jou
-vivado_pid*.str
-*.runs/
-*.cache/
-*.hw/
-*.xpr
-*.xsa
-
-# Quartus
-.qsys_edit/
-db/
-incremental_db/
-*.qpf
-*.qsf
-*.sof
-
-# Questa / ModelSim
-transcript
-vsim.wlf
-work/
-*.wlf
-
-
-# ============================================================
-# Synopsys Generated Files
-# ============================================================
-
-*.pvl
-*.syn
-*.mr
-*.svf
-
-# Design Compiler
-alib-*
-*.synopsys_*
-
-# Verdi
-novas.conf
-novas.rc
-.verdi/
-
-
-# ============================================================
-# Editor / IDE Files
-# ============================================================
-
-# Vim
+# ------------------------------------------------------------
+# 5. Editor, IDE & OS Files
+# ------------------------------------------------------------
+# Vim / Emacs
 *.swp
 *.swo
-*~
 
-# VS Code
+# VS Code & JetBrains
 .vscode/
-
-# IntelliJ / CLion
 .idea/
 
 # Eclipse
@@ -181,104 +178,33 @@ novas.rc
 .cproject
 .settings/
 
-
-# ============================================================
-# Operating System Files
-# ============================================================
-
+# macOS / Windows
 .DS_Store
 .DS_Store?
 ._*
 .Spotlight-V100
 .Trashes
-
 Thumbs.db
 ehthumbs.db
 Desktop.ini
 
-
-# ============================================================
-# Temporary / Backup Files
-# ============================================================
-
-*.bak
-*.backup
-*.orig
-*.rej
-*.patch
-
-# Generic temporary directories
-tmp/
-temp/
-.tmp/
-
-
-# ============================================================
-# Logs
-# ============================================================
-
-*.log
-logs/
-
-
-# ============================================================
-# Personal / Local Configuration
-# ============================================================
-
-# Local environment files
+# Local machine / Environment
 .env
 .env.*
 !.env.example
-
-# Local machine configuration
 local/
 .local/
 
-
-# ============================================================
-# Project-Specific Generated Files
-# ============================================================
-
-# Generated VCS simulation outputs
-sim/vcs/csrc/
-sim/vcs/DVEfiles/
-sim/vcs/urgReport/
-sim/vcs/simv*
-sim/vcs/*.log
-sim/vcs/*.vpd
-sim/vcs/*.fsdb
-sim/vcs/*.vcd
-
-# Generated waveform files
-waves/
-waveforms/
-
-
-# ============================================================
-# VeeR-EL2 External Build / Configuration
-# ============================================================
-
-# Do not commit an external VeeR checkout if it is placed
-# inside the project directory.
-Cores-VeeR-EL2/
-
-# VeeR generated configuration snapshots
-snapshots/
-
-# If a VeeR checkout is kept elsewhere and RV_ROOT points
-# to it, these entries have no effect on the external repo.
-
-
-# ============================================================
-# Preserve Empty Directories
-# ============================================================
-
+# ------------------------------------------------------------
+# 6. Explicit Exceptions (Preserve Important Tracked Files)
+# ------------------------------------------------------------
+# Preserve empty directory markers
 !.gitkeep
 
-# Generated test/build files
-*.o
-*.elf
+# Preserve memory hex files for testbench firmware & ICCM
+!my_test/*.hex
+!*.hex
 
-# Generated build files
-*.o
-*.elf
+# Preserve Verdi signal configuration scripts in script/
+!script/*.rc
+!script/*.tcl
