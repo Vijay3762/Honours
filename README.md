@@ -16,12 +16,15 @@
 | UART–Interconnect Integration | ✅ Complete | — | ✅ 19/19 pass | Full end-to-end path from master through bus to UART |
 | RISC-V Processor (SweRV EL2) | ✅ Integrated | — | ✅ 4/4 pass | VeeR EL2 RV32IMC, IFU+LSU as AXI4 masters, boots from the ICCM |
 | CPU → AXI → UART read/write test | ✅ Complete | — | ✅ All pass | Core configures the UART, transmits and receives a byte |
-| AXI GPIO (axi_gpio) | ✅ Complete | ✅ 86/86 pass | ✅ 29/29 pass | 16-bit GPIO, per-bit direction, SET/CLR/TOGGLE, two-flop sync |
-| AXI Timer (axi_timer) | ✅ Complete | ✅ 38/38 pass | ✅ 31/31 pass | 32-bit down-counter, auto-reload, compare match, W1C status, IRQ |
+| AXI GPIO (axi_gpio) | ✅ Complete | ✅ 86/86 pass | ✅ 29/29 pass (Interconnect) + 20/20 pass (CPU+Interconnect+GPIO) | 16-bit GPIO, per-bit direction, SET/CLR/TOGGLE, two-flop sync, integrated with CPU & Interconnect in iverilog |
+| CPU → AXI → GPIO read/write test | ✅ Complete | — | ✅ 20/20 pass | CPU core configures GPIO DIR, OUT, SET/CLR/TOGGLE, reads pad inputs via AXI bus |
+| AXI Timer (axi_timer) | ✅ Complete | ✅ 38/38 pass | ✅ 31/31 pass (Interconnect) + 14/14 pass (CPU+Interconnect+Timer) | 32-bit down-counter, auto-reload, compare match, W1C status, IRQ, verified with CPU Master & VeeR |
+| CPU → AXI → Timer read/write test | ✅ Complete | — | ✅ 14/14 pass | CPU core configures Timer LOAD, CMP, CTRL, observes countdown & compare match IRQ, clears status via W1C |
 | CNN Convolution Accelerator (axi_cnn_conv) | ✅ Complete | ✅ 41/41 pass | ✅ 29/29 pass | 3×3 kernel, 9-multiplier parallel, 4-level adder tree, bias |
-| DMA Controller (`axi_dma_ctrl`) | ✅ Complete | ✅ Verified (38/38 pass) | ✅ Verified | AXI4 slave (CPU programming) + AXI4 master (data movement), interrupt, W1C status, auto-restart |
-| ReLU Unit | 📋 Planned | — | — | |
-| 7-Segment Display Controller | 📋 Planned | — | — | Basys3 4-digit multiplexed display |
+| DMA Controller (`axi_dma_ctrl`) | ✅ Complete | ✅ Verified (38/38 pass) | ✅ 24/24 pass (Interconnect Port 2) | AXI4 slave (CPU programming) + AXI4 master (data movement), interrupt, W1C status, auto-restart |
+| ReLU Unit (`relu_unit` / `axi_relu`) | ✅ Complete | ✅ 76/76 pass (Core) + 35/35 pass (AXI) | ✅ 44/44 pass (Interconnect Port 3) | Element-wise max(0, x), streaming + AXI4 slave, clipping, sparsity profiling, verified on AXI interconnect |
+| 7-Segment Display Controller (`axi_seven_seg`) | ✅ Complete | ✅ 46/46 pass | ✅ 11/11 pass (Interconnect Port 7) | Basys3 4-digit multiplexed cathode/anode scanner, hex decoder, raw segment mode, DP control |
+| 2x2 Spatial Pooling Unit (`pooling_unit` / `axi_pooling`) | ✅ Complete | ✅ 127/127 pass (Core) + 31/31 pass (AXI) | ✅ 14/14 pass (Interconnect) | 2x2 spatial downsampler, Max/Avg/Min/Bypass modes, argmax index, symmetric rounding, 64-bit sub-word steering |
 
 ---
 
@@ -42,6 +45,124 @@ VeeR EL2 (LSU)  →  AXI4 interconnect  →  axi_uart_bridge  →  axi_uart_top 
 | `tb/tb_cpu_uart_veer.sv` | Testbench: loopback decode of the serial line + checks of the values the core read back |
 | `script/run_cpu_uart_veer.sh` | Build firmware → `xvlog` → `xelab` → `xsim` (one shot) |
 | `script/patch_veer_config.py` | Patches the generated VeeR configuration (see below) |
+
+---
+
+## CPU Core → AXI → GPIO Integration (Icarus Verilog & VeeR EL2)
+
+The GPIO controller (`axi_gpio`) is integrated at interconnect port 6 (`m06`, base `0x6000_0000`) and connected to external GPIO pads (`gpio_pads_i`, `gpio_pads_o`, `gpio_pads_oen`).
+
+The end-to-end CPU → Interconnect → GPIO path is verified using Icarus Verilog (`iverilog` / `vvp`):
+
+```
+CPU Master / Core  →  AXI4 Interconnect (m06)  →  axi_gpio  →  GPIO Pads (i/o/oen)
+```
+
+### Verified Features:
+1. **Reset defaults**: `gpio_pads_o = 0x0000`, `gpio_pads_oen = 0x0000`.
+2. **Peripheral identification**: CPU reads `GPIO_ID` (`0x4749504F` = "GPIO") and `GPIO_VERSION` (`0x00010000` = v1.0).
+3. **Direction register (`GPIO_DIR`)**: CPU writes `0x00FF` (lower 8 output, upper 8 input); external `gpio_pads_oen` immediately asserts `0x00FF`.
+4. **Data output (`GPIO_OUT`)**: CPU writes `0x00A5`; external `gpio_pads_o` outputs `0x00A5`.
+5. **Atomic set (`GPIO_OUT_SET`)**: CPU writes mask `0x0050` (bits 4, 6); `GPIO_OUT` becomes `0x00F5`.
+6. **Atomic clear (`GPIO_OUT_CLR`)**: CPU writes mask `0x0005` (bits 0, 2); `GPIO_OUT` becomes `0x00F0`.
+7. **Atomic toggle (`GPIO_OUT_TOGGLE`)**: CPU writes mask `0x0033` (bits 0, 1, 4, 5); `GPIO_OUT` becomes `0x00C3`.
+8. **Physical input sampling (`GPIO_IN`)**: External stimulus (`0x5A3C`) applied to `gpio_pads_i` is synchronized through two-stage flip-flops and correctly read by the CPU.
+9. **64-bit sub-word addressing & read data duplication**: Enhanced `axi_gpio` handles both 32-bit and 64-bit AXI masters (including VeeR EL2 LSU).
+
+### Running the CPU-to-GPIO Simulation:
+```bash
+./script/run_cpu_gpio_tb.sh
+```
+All 20/20 test assertions pass cleanly.
+
+---
+
+## CPU Core → AXI → Timer Integration (Icarus Verilog & VeeR EL2)
+
+The 32-bit Timer unit (`axi_timer`) is integrated at interconnect port 5 (`m05`, base `0x5000_0000`) and its interrupt line (`timer_irq_o`) is routed both to the external pin and into the processor core (`core.timer_int`).
+
+The end-to-end CPU → Interconnect → Timer path is verified using Icarus Verilog (`iverilog` / `vvp`):
+
+```
+CPU Master / Core  →  AXI4 Interconnect (m05)  →  axi_timer  →  timer_irq_o / core.timer_int
+```
+
+### Verified Features:
+1. **Reset defaults**: `timer_irq = 0`, `TIMER_CTRL = 0`, `TIMER_STATUS = 0`.
+2. **Peripheral identification**: CPU reads `TIMER_ID` (`0x54494D52` = `"TIMR"`) and `TIMER_VERSION` (`0x00010000` = v1.0).
+3. **Load register (`TIMER_LOAD`)**: CPU writes initial count `30` and reads back `30`.
+4. **Compare register (`TIMER_COMPARE`)**: CPU writes threshold `15` and reads back `15`.
+5. **Timer control & start (`TIMER_CTRL`)**: CPU writes `0x05` (`enable=1`, `irq_en=1`, one-shot mode).
+6. **Hardware countdown**: Timer counter decrements each cycle while running; readback confirms `TIMER_VALUE < 30`.
+7. **Compare match detection & interrupt**: When `TIMER_VALUE == TIMER_COMPARE` (15), the match flag (`TIMER_STATUS[0]`) asserts and `timer_irq_o` goes HIGH.
+8. **Write-1-to-Clear (W1C) status**: CPU writes `1` to `TIMER_STATUS[0]`; the match flag clears to `0` and `timer_irq_o` de-asserts LOW.
+9. **Firmware testbench**: RISC-V Bare-Metal assembly test (`my_test/timer_test.S` -> `my_test/timer_test.hex`) compiled with `riscv64-unknown-elf-gcc` for execution on the VeeR EL2 core.
+
+### Running the CPU-to-Timer Simulation:
+```bash
+./script/run_cpu_timer_tb.sh
+```
+All 14/14 test assertions pass cleanly.
+
+---
+
+## DMA Controller → AXI Interconnect Integration
+
+The DMA controller (`axi_dma_ctrl`) is integrated at interconnect port 2 (`m02`, base `0x2000_0000`) for CPU-initiated register programming, while its AXI4 master interface performs high-throughput 64-bit data movement between memory and accelerator peripherals.
+
+```
+CPU Master / Core  →  AXI4 Interconnect (m02)  →  axi_dma_ctrl (Slave)
+DMA Master (axi_dma_ctrl)  →  AXI4 Interconnect / Memory (Read & Write Channels)
+```
+
+### Verified Features:
+1. **Reset defaults**: `CTRL = 0x0`, `STATUS = 0x0`, `IRQ = 0`.
+2. **Register programming & readback**: `SRC_ADDR`, `DST_ADDR`, `LEN`, `CTRL`.
+3. **Single-beat DMA transfer**: 64-bit beat moved between source and destination with proper AW/W handshakes.
+4. **Multi-beat burst transfer**: 4 sequential beats moved with automatic address incrementing (`+8` bytes/beat).
+5. **Interrupt & W1C handling**: `dma_irq_o` assertion on completion; deasserted via W1C write to `DMA_IRQ_STAT` (`0x14`).
+6. **RO register protection**: Writes to `DMA_ID` and `DMA_VERSION` return `SLVERR` (`2'b10`).
+7. **Address error handling**: Out-of-aperture accesses return `DECERR` (`2'b11`), misaligned addresses return `SLVERR` (`2'b10`).
+8. **Byte strobe (WSTRB) partial writes**: Byte 0 and byte 1 write masking verified.
+
+### Running the DMA Verification Suite:
+```bash
+./script/run_dma_on_interconnect.sh
+```
+- Standalone: 38/38 checks pass cleanly.
+- Interconnect integration: 24/24 checks pass cleanly.
+
+---
+
+## ReLU Unit → AXI Interconnect Integration
+
+The parameterized ReLU activation engine (`axi_relu`) is integrated at interconnect port 3 (`m03`, base `0x3000_0000`, 4 KiB aperture) to perform hardware-accelerated non-linear activations and activation sparsity profiling for CNN layers.
+
+```
+CPU Master / DMA  →  AXI4 Interconnect (m03)  →  axi_relu (Slave)  →  relu_unit (Core)
+```
+
+### Verified Features:
+1. **Reset & peripheral identification**: `RELU_CTRL = 0x01` (enabled by default), `RELU_ID = 'RELU'` (`0x52454C55`), `RELU_VERSION = v1.0` (`0x00010000`).
+2. **Configuration & thresholds**: Dynamic programming of `RELU_CTRL` (enable, bypass, clip_en) and `RELU_CLIP_MAX`.
+3. **Standard positive ReLU activation**: Linear passthrough $\max(0, x)$ with status flag assertions (`last_active=1`, `last_zero=0`).
+4. **Negative clamping & zero handling**: Signed negative numbers clamped to zero with `last_zero=1`.
+5. **Boundary values**: Verification across extreme 32-bit signed limits (`0x7FFF_FFFF`, `0x8000_0000`, `-1`).
+6. **Bypass mode**: Unclamped signed passthrough for linear layer inspection.
+7. **Saturated clipping activation (ReLU6)**: Saturation at programmable `CLIP_MAX` threshold with `last_clipped=1`.
+8. **Sparsity & performance profiling**: Real-time tracking of `ZERO_COUNT` and `TOTAL_COUNT` metrics, with single-pulse `reset_stats`.
+9. **Read-only protection**: Writes to `STATUS`, `DOUT`, `ZERO_COUNT`, `TOTAL_COUNT`, `ID`, `VERSION` return `SLVERR` (`2'b10`).
+10. **Address decoding & apertures**: Out-of-aperture accesses return `DECERR` (`2'b11`), misaligned accesses return `SLVERR` (`2'b10`).
+11. **WSTRB partial writes**: Sub-word byte strobe write masking verified on `CLIP_MAX`.
+12. **Interconnect multi-slave routing**: Independent access to `m02`, `m03` (ReLU), and `m04` without bus locking or cross-talk.
+
+### Running the ReLU Verification Suite:
+```bash
+./script/run_relu_tb.sh
+```
+- Standalone core (`tb_relu_unit`): 76/76 checks pass cleanly.
+- Memory-mapped slave (`tb_axi_relu`): 35/35 checks pass cleanly.
+- Interconnect integration (`tb_relu_on_interconnect`): 44/44 checks pass cleanly.
 | `script/gen_veer_wrapper.py` | Regenerates `rtl/veer_core_wrapper.sv` from the core's port list |
 | `my_test/uart_test.S` | The firmware (assembly) |
 | `my_test/soc_test.ld` | Linker script (code at the ICCM base `0xEE00_0000`) |
@@ -417,9 +538,14 @@ Honours/
 │   ├── simple_cpu_master.sv             # AXI4 test master (CPU replacement for sim)
 │   ├── soc_top.sv                       # ★ SoC top (interconnect + peripherals)
 │   ├── soc_top_direct.sv                # ★ Direct CPU→UART test (no interconnect)
-│   └── dma/
-│       └── axi_dma_ctrl.sv              # ★ DMA Controller (slave+master)
+│   ├── dma/
+│   │   └── axi_dma_ctrl.sv              # ★ DMA Controller (slave+master)
+│   └── relu/
+│       ├── relu_unit.sv                 # ★ Streaming ReLU activation engine
+│       └── axi_relu.sv                  # ★ AXI4 memory-mapped ReLU slave
 ├── tb/
+│   ├── tb_relu_unit.sv                  # Standalone ReLU streaming TB
+│   ├── tb_axi_relu.sv                   # Standalone AXI ReLU TB
 │   ├── tb_uart_on_interconnect.sv      # ★ Integration TB (UART on bus)
 │   ├── tb_cpu_uart_veer.sv              # ★ Core → AXI → UART test
 │   ├── tb_axi_uart_top.v               # Standalone UART TB
@@ -449,7 +575,8 @@ Honours/
 │   ├── run_cpu_uart_veer.sh            # ★ core → UART test (Vivado XSim)
 │   ├── run_cpu_uart_tb.sh              # ★ SoC-level CPU→UART test (Vivado XSim)
 │   ├── run_cpu_uart_direct.sh          # ★ Direct CPU→UART test (Vivado XSim)
-│   └── run_dma_on_interconnect.sh      # ★ DMA on interconnect test (Vivado XSim)
+│   ├── run_dma_on_interconnect.sh      # ★ DMA on interconnect test (Vivado XSim)
+│   └── run_relu_tb.sh                  # ★ ReLU test suite (Verilator / Vivado)
 ├── doc/
 │   ├── RISC_V_CNN_SoC_Architecture_Document.docx
 │   └── Project_Abstract.pdf
@@ -482,16 +609,23 @@ firmware.  Two notes:
 
 ---
 
-## Planned Work
+## Completed & Verified IP Blocks
 
-The SoC backbone (interconnect + UART + processor) is complete and verified.
-GPIO, Timer, and CNN Convolution Accelerator are also complete and verified (standalone + integration TB).
-Remaining blocks to be implemented and integrated:
-1. **ReLU Unit** — single-cycle activation function, feeds feature map buffer
-2. **7-Segment Display Controller** — BCD-to-segment decoder, Basys3 digit multiplexer (m07)
-3. **Full SoC Integration TB** — all blocks on bus, SweRV EL2 running firmware to drive CNN inference end-to-end
-4. **FPGA Implementation** — synthesis, place-and-route, timing closure on Artix-7
-   (the ICCM model in `rtl/veer_iccm_ram.sv` has to be replaced by real block RAM)
+The full suite of application-specific and peripheral IP blocks has been successfully designed, verified standalone, and integrated:
+1. **AXI4-Lite UART** (`axi_uart_top` + `axi_uart_bridge`) — verified standalone and end-to-end with VeeR EL2 core
+2. **AXI GPIO** (`axi_gpio`) — 16-bit configurable I/O, verified standalone, on interconnect, and with CPU core
+3. **AXI Timer** (`axi_timer`) — 32-bit auto-reload down counter with compare match and interrupt
+4. **CNN Convolution Accelerator** (`axi_cnn_conv`) — 3×3 kernel with 9 parallel DSP multipliers and adder tree
+5. **DMA Controller** (`axi_dma_ctrl`) — AXI4 master + slave engine for high-throughput image and weight transfers
+6. **ReLU Unit** (`relu_unit` / `axi_relu`) — streaming activation core + AXI slave with clipping and sparsity profiling
+7. **7-Segment Display Controller** (`axi_seven_seg`) — 4-digit dynamic multiplexer mapped to interconnect Port 7 (`0x7000_0000`)
+8. **2×2 Spatial Pooling Engine** (`pooling_unit` / `axi_pooling`) — Max, Average, Min, and Bypass pooling for feature downsampling
+
+## Remaining Planned Work
+
+1. **Full SoC End-to-End Firmware Execution** — SweRV EL2 running full MNIST recognition pipeline: DMA transfer -> Conv -> ReLU -> Pool -> Classification -> 7-Segment Display
+2. **FPGA Implementation** — synthesis, place-and-route, timing closure on Xilinx Artix-7 (Digilent Basys3)
+   (the ICCM model in `rtl/veer_iccm_ram.sv` to be mapped to FPGA block RAM)
 
 ---
 

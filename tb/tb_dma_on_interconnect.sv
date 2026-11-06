@@ -858,59 +858,116 @@ module tb_dma_on_interconnect;
     wire               m_axi_rready;
 
     // ---------------------------------------------------------
-    // Connect DMA master port m02 to loopback memory
+    // Instantiate axi_dma_ctrl on interconnect port m02
     // ---------------------------------------------------------
-    assign ic_dma_awready = m_axi_awready;
-    assign ic_dma_wready  = m_axi_wready;
-    assign ic_dma_bvalid  = m_axi_bvalid;
-    assign ic_dma_bid     = m_axi_bid;
-    assign ic_dma_bresp   = m_axi_bresp;
+    axi_dma_ctrl #(
+        .DATA_WIDTH (DW),
+        .ADDR_WIDTH (AW),
+        .ID_WIDTH   (IDW),
+        .BASE_ADDR  (32'h2000_0000)
+    ) u_dma (
+        .clk             (clk),
+        .rst             (rst),
 
-    assign m_axi_awid     = ic_dma_awid;
-    assign m_axi_awaddr   = ic_dma_awaddr;
-    assign m_axi_awlen    = ic_dma_awlen;
-    assign m_axi_awsize   = ic_dma_awsize;
-    assign m_axi_awburst  = ic_dma_awburst;
-    assign m_axi_awlock   = ic_dma_awlock;
-    assign m_axi_awcache  = ic_dma_awcache;
-    assign m_axi_awprot   = ic_dma_awprot;
-    assign m_axi_awqos    = ic_dma_awqos;
-    assign m_axi_awregion = ic_dma_awregion;
-    assign m_axi_awvalid  = ic_dma_awvalid;
+        // Slave interface: interconnect m02 -> DMA slave
+        .s_axi_awid      (ic_dma_awid),
+        .s_axi_awaddr    (ic_dma_awaddr),
+        .s_axi_awlen     (ic_dma_awlen),
+        .s_axi_awsize    (ic_dma_awsize),
+        .s_axi_awburst   (ic_dma_awburst),
+        .s_axi_awlock    (ic_dma_awlock),
+        .s_axi_awcache   (ic_dma_awcache),
+        .s_axi_awprot    (ic_dma_awprot),
+        .s_axi_awqos     (ic_dma_awqos),
+        .s_axi_awregion  (ic_dma_awregion),
+        .s_axi_awvalid   (ic_dma_awvalid),
+        .s_axi_awready   (ic_dma_awready),
 
-    assign m_axi_wdata    = ic_dma_wdata;
-    assign m_axi_wstrb    = ic_dma_wstrb;
-    assign m_axi_wlast    = ic_dma_wlast;
-    assign m_axi_wvalid   = ic_dma_wvalid;
+        .s_axi_wdata     (ic_dma_wdata),
+        .s_axi_wstrb     (ic_dma_wstrb),
+        .s_axi_wlast     (ic_dma_wlast),
+        .s_axi_wvalid    (ic_dma_wvalid),
+        .s_axi_wready    (ic_dma_wready),
 
-    assign ic_dma_bready  = m_axi_bready;
+        .s_axi_bid       (ic_dma_bid),
+        .s_axi_bresp     (ic_dma_bresp),
+        .s_axi_bvalid    (ic_dma_bvalid),
+        .s_axi_bready    (ic_dma_bready),
 
-    assign ic_dma_arready = m_axi_arready;
-    assign ic_dma_rvalid  = m_axi_rvalid;
-    assign ic_dma_rid     = m_axi_rid;
-    assign ic_dma_rdata   = m_axi_rdata;
-    assign ic_dma_rresp   = m_axi_rresp;
-    assign ic_dma_rlast   = m_axi_rlast;
+        .s_axi_arid      (ic_dma_arid),
+        .s_axi_araddr    (ic_dma_araddr),
+        .s_axi_arlen     (ic_dma_arlen),
+        .s_axi_arsize    (ic_dma_arsize),
+        .s_axi_arburst   (ic_dma_arburst),
+        .s_axi_arlock    (ic_dma_arlock),
+        .s_axi_arcache   (ic_dma_arcache),
+        .s_axi_arprot    (ic_dma_arprot),
+        .s_axi_arqos     (ic_dma_arqos),
+        .s_axi_arregion  (ic_dma_arregion),
+        .s_axi_arvalid   (ic_dma_arvalid),
+        .s_axi_arready   (ic_dma_arready),
 
-    assign m_axi_arid     = ic_dma_arid;
-    assign m_axi_araddr   = ic_dma_araddr;
-    assign m_axi_arlen    = ic_dma_arlen;
-    assign m_axi_arsize   = ic_dma_arsize;
-    assign m_axi_arburst  = ic_dma_arburst;
-    assign m_axi_arlock   = ic_dma_arlock;
-    assign m_axi_arcache  = ic_dma_arcache;
-    assign m_axi_arprot   = ic_dma_arprot;
-    assign m_axi_arqos    = ic_dma_arqos;
-    assign m_axi_arregion = ic_dma_arregion;
-    assign m_axi_arvalid  = ic_dma_arvalid;
+        .s_axi_rid       (ic_dma_rid),
+        .s_axi_rdata     (ic_dma_rdata),
+        .s_axi_rresp     (ic_dma_rresp),
+        .s_axi_rlast     (ic_dma_rlast),
+        .s_axi_rvalid    (ic_dma_rvalid),
+        .s_axi_rready    (ic_dma_rready),
 
-    assign ic_dma_rready  = m_axi_rready;
+        // Master interface: DMA master -> loopback memory
+        .m_axi_awid      (m_axi_awid),
+        .m_axi_awaddr    (m_axi_awaddr),
+        .m_axi_awlen     (m_axi_awlen),
+        .m_axi_awsize    (m_axi_awsize),
+        .m_axi_awburst   (m_axi_awburst),
+        .m_axi_awlock    (m_axi_awlock),
+        .m_axi_awcache   (m_axi_awcache),
+        .m_axi_awprot    (m_axi_awprot),
+        .m_axi_awqos     (m_axi_awqos),
+        .m_axi_awregion  (m_axi_awregion),
+        .m_axi_awvalid   (m_axi_awvalid),
+        .m_axi_awready   (m_axi_awready),
+
+        .m_axi_wdata     (m_axi_wdata),
+        .m_axi_wstrb     (m_axi_wstrb),
+        .m_axi_wlast     (m_axi_wlast),
+        .m_axi_wvalid    (m_axi_wvalid),
+        .m_axi_wready    (m_axi_wready),
+
+        .m_axi_bid       (m_axi_bid),
+        .m_axi_bresp     (m_axi_bresp),
+        .m_axi_bvalid    (m_axi_bvalid),
+        .m_axi_bready    (m_axi_bready),
+
+        .m_axi_arid      (m_axi_arid),
+        .m_axi_araddr    (m_axi_araddr),
+        .m_axi_arlen     (m_axi_arlen),
+        .m_axi_arsize    (m_axi_arsize),
+        .m_axi_arburst   (m_axi_arburst),
+        .m_axi_arlock    (m_axi_arlock),
+        .m_axi_arcache   (m_axi_arcache),
+        .m_axi_arprot    (m_axi_arprot),
+        .m_axi_arqos     (m_axi_arqos),
+        .m_axi_arregion  (m_axi_arregion),
+        .m_axi_arvalid   (m_axi_arvalid),
+        .m_axi_arready   (m_axi_arready),
+
+        .m_axi_rid       (m_axi_rid),
+        .m_axi_rdata     (m_axi_rdata),
+        .m_axi_rresp     (m_axi_rresp),
+        .m_axi_rlast     (m_axi_rlast),
+        .m_axi_rvalid    (m_axi_rvalid),
+        .m_axi_rready    (m_axi_rready),
+
+        .dma_irq_o       (dma_irq)
+    );
 
     // ---------------------------------------------------------
     // Loopback memory for DMA master port
     // ---------------------------------------------------------
     localparam MEM_DEPTH = 1 << 12;
     reg  [DW-1:0]   dma_mem [0:MEM_DEPTH-1];
+    reg  [AW-1:0]   dma_wr_addr_r;
 
     reg [IDW-1:0]   m_axi_bid_r;
     reg [1:0]       m_axi_bresp_r;
@@ -931,12 +988,19 @@ module tb_dma_on_interconnect;
             m_axi_rresp_r  <= 2'b00;
             m_axi_rlast_r  <= 1'b0;
             m_axi_rid_r    <= '0;
+            dma_wr_addr_r  <= '0;
         end else begin
+            if (m_axi_awvalid && m_axi_awready) begin
+                dma_wr_addr_r <= m_axi_awaddr;
+            end
             // Write data on W handshake
             if (m_axi_wvalid && m_axi_wready) begin
                 for (int i = 0; i < DW/8; i = i + 1) begin
-                    if (m_axi_wstrb[i])
-                        dma_mem[(m_axi_awaddr >> 3) % MEM_DEPTH][i*8 +: 8] <= m_axi_wdata[i*8 +: 8];
+                    if (m_axi_wstrb[i]) begin
+                        logic [AW-1:0] effective_addr;
+                        effective_addr = (m_axi_awvalid && m_axi_awready) ? m_axi_awaddr : dma_wr_addr_r;
+                        dma_mem[(effective_addr >> 3) % MEM_DEPTH][i*8 +: 8] <= m_axi_wdata[i*8 +: 8];
+                    end
                 end
             end
             // Generate B response on WLAST
@@ -995,6 +1059,8 @@ module tb_dma_on_interconnect;
         end
     endtask
 
+    reg [1:0] last_write_resp;
+
     // ---------------------------------------------------------
     // AXI write helper (single-beat, 64-bit bus)
     // ---------------------------------------------------------
@@ -1039,6 +1105,7 @@ module tb_dma_on_interconnect;
             join
 
             wait (m_bvalid);
+            last_write_resp = m_bresp;
             @(posedge clk); #1;
             m_bready <= 1'b0;
 
@@ -1051,6 +1118,17 @@ module tb_dma_on_interconnect;
         input [31:0]    data;
         input [7:0]     strb;
         axi_write_64(addr, {32'h0, data}, strb);
+    endtask
+
+    task axi_write_32_resp;
+        input [AW-1:0]  addr;
+        input [31:0]    data;
+        input [7:0]     strb;
+        output [1:0]    resp;
+        begin
+            axi_write_64(addr, {32'h0, data}, strb);
+            resp = last_write_resp;
+        end
     endtask
 
     // ---------------------------------------------------------
@@ -1159,7 +1237,7 @@ module tb_dma_on_interconnect;
             axi_write_32(DMA_SRC_ADDR, 32'h1000, 8'h0F);
             axi_write_32(DMA_DST_ADDR, 32'h2000, 8'h0F);
             axi_write_32(DMA_LEN, 32'd4, 8'h0F);
-            axi_write_32(DMA_CTRL, 32'h07, 8'h0F);  // enable + start + irq_en
+            axi_write_32(DMA_CTRL, 32'h05, 8'h0F);  // enable + irq_en
 
             axi_read_32(DMA_SRC_ADDR, rd, resp);
             if (rd === 32'h1000)
@@ -1180,8 +1258,8 @@ module tb_dma_on_interconnect;
                 fail_msg("DMA_LEN readback mismatch");
 
             axi_read_32(DMA_CTRL, rd, resp);
-            if (rd === 32'h07)
-                pass_msg("CTRL readback = 0x07");
+            if (rd === 32'h05)
+                pass_msg("CTRL readback = 0x05");
             else
                 fail_msg("CTRL readback mismatch");
         end
@@ -1281,9 +1359,9 @@ module tb_dma_on_interconnect;
             else
                 fail_msg("DMA IRQ not asserted");
 
-            // Clear done (W1C)
-            axi_write_32(DMA_STATUS, 32'h2, 8'h0F);
-            @(posedge clk); #1;
+            // Clear done interrupt (W1C on DMA_IRQ_STAT)
+            axi_write_32(DMA_IRQ_STAT, 32'h1, 8'h0F);
+            repeat (5) @(posedge clk);
 
             if (dma_irq === 1'b0)
                 pass_msg("DMA IRQ deasserted after W1C");
@@ -1299,20 +1377,19 @@ module tb_dma_on_interconnect;
         begin
             $display("\n== T6: RO register writes → SLVERR ==");
 
-            axi_write_32(DMA_ID_REG, 32'hFFFF_FFFF, 8'h0F);
-            axi_read_32(DMA_ID_REG, rd, resp);
+            axi_write_32_resp(DMA_ID_REG, 32'hFFFF_FFFF, 8'h0F, resp);
             if (resp === 2'b10)
                 pass_msg("DMA_ID write returns SLVERR");
             else
                 fail_msg("DMA_ID write did not return SLVERR");
 
+            axi_read_32(DMA_ID_REG, rd, resp);
             if (rd === DMA_ID_VALUE)
                 pass_msg("DMA_ID unchanged after write attempt");
             else
                 fail_msg("DMA_ID was modified");
 
-            axi_write_32(DMA_VERSION, 32'hFFFF_FFFF, 8'h0F);
-            axi_read_32(DMA_VERSION, rd, resp);
+            axi_write_32_resp(DMA_VERSION, 32'hFFFF_FFFF, 8'h0F, resp);
             if (resp === 2'b10)
                 pass_msg("DMA_VERSION write returns SLVERR");
             else
@@ -1328,28 +1405,37 @@ module tb_dma_on_interconnect;
             $display("\n== T7: Address error handling ==");
 
             // Reserved offset
-            axi_write_32(DMA_BASE + 32'h020, 32'h1234_5678, 8'h0F);
+            axi_write_32_resp(DMA_BASE + 32'h020, 32'h1234_5678, 8'h0F, resp);
+            if (resp === 2'b10)
+                pass_msg("Reserved offset 0x20 write returns SLVERR");
+            else
+                fail_msg("Reserved offset 0x20 write did not return SLVERR");
+
             axi_read_32(DMA_BASE + 32'h020, rd, resp);
             if (resp === 2'b10)
-                pass_msg("Reserved offset 0x20 → SLVERR");
+                pass_msg("Reserved offset 0x20 read returns SLVERR");
             else
-                fail_msg("Reserved offset did not return SLVERR");
+                fail_msg("Reserved offset 0x20 read did not return SLVERR");
 
-            // Out-of-aperture
-            axi_write_32(32'h3000, 32'hAAAA_AAAA, 8'h0F);
-            axi_read_32(32'h3000, rd, resp);
+            // Out-of-aperture within DMA port range (4 KiB aperture, base=0x2000_0000)
+            axi_write_32_resp(DMA_BASE + 32'h2000, 32'hAAAA_AAAA, 8'h0F, resp);
             if (resp === 2'b11)
-                pass_msg("Out-of-aperture 0x3000 → DECERR");
+                pass_msg("Out-of-aperture write returns DECERR");
             else
-                fail_msg("Out-of-aperture did not return DECERR");
+                fail_msg("Out-of-aperture write did not return DECERR");
 
-            // Misaligned
-            axi_write_32(DMA_BASE + 32'h005, 32'h1234_5678, 8'h0F);
-            axi_read_32(DMA_BASE + 32'h005, rd, resp);
-            if (resp === 2'b10)
-                pass_msg("Misaligned 0x005 → SLVERR");
+            axi_read_32(DMA_BASE + 32'h2000, rd, resp);
+            if (resp === 2'b11)
+                pass_msg("Out-of-aperture read returns DECERR");
             else
-                fail_msg("Misaligned did not return SLVERR");
+                fail_msg("Out-of-aperture read did not return DECERR");
+
+            // Misaligned address
+            axi_write_32_resp(DMA_BASE + 32'h005, 32'h1234_5678, 8'h0F, resp);
+            if (resp === 2'b10)
+                pass_msg("Misaligned write returns SLVERR");
+            else
+                fail_msg("Misaligned write did not return SLVERR");
         end
     endtask
 
@@ -1360,28 +1446,28 @@ module tb_dma_on_interconnect;
         begin
             $display("\n== T8: WSTRB partial writes ==");
 
-            axi_write_32(DMA_LEN, 32'hDEAD_BEEF, 8'h0F);
-            axi_read_32(DMA_LEN, rd, resp);
+            axi_write_32(DMA_SRC_ADDR, 32'hDEAD_BEEF, 8'h0F);
+            axi_read_32(DMA_SRC_ADDR, rd, resp);
             if (rd === 32'hDEAD_BEEF)
-                pass_msg("DMA_LEN full write = 0xDEAD_BEEF");
+                pass_msg("DMA_SRC_ADDR full write = 0xDEAD_BEEF");
             else
-                fail_msg("DMA_LEN full write mismatch");
+                fail_msg("DMA_SRC_ADDR full write mismatch");
 
             // Write only byte 0 (strb=0x1) → 0xDEAD_BE00
-            axi_write_32(DMA_LEN, 32'h00, 8'h01);
-            axi_read_32(DMA_LEN, rd, resp);
+            axi_write_32(DMA_SRC_ADDR, 32'h00, 8'h01);
+            axi_read_32(DMA_SRC_ADDR, rd, resp);
             if (rd === 32'hDEAD_BE00)
-                pass_msg("DMA_LEN byte0 write = 0xDEAD_BE00");
+                pass_msg("DMA_SRC_ADDR byte0 write = 0xDEAD_BE00");
             else
-                fail_msg("DMA_LEN byte0 write mismatch");
+                fail_msg("DMA_SRC_ADDR byte0 write mismatch");
 
             // Write only byte 1 (strb=0x2) → 0xDEAD_0000
-            axi_write_32(DMA_LEN, 32'h00, 8'h02);
-            axi_read_32(DMA_LEN, rd, resp);
+            axi_write_32(DMA_SRC_ADDR, 32'h00, 8'h02);
+            axi_read_32(DMA_SRC_ADDR, rd, resp);
             if (rd === 32'hDEAD_0000)
-                pass_msg("DMA_LEN byte1 write = 0xDEAD_0000");
+                pass_msg("DMA_SRC_ADDR byte1 write = 0xDEAD_0000");
             else
-                fail_msg("DMA_LEN byte1 write mismatch");
+                fail_msg("DMA_SRC_ADDR byte1 write mismatch");
         end
     endtask
 

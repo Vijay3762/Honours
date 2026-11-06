@@ -43,7 +43,20 @@ module soc_top_veer #(
     input  wire                    rst,          // active-high system reset
     output wire                    uart_tx_o,
     input  wire                    uart_rx_i,
-    output wire                    uart_irq_o
+    output wire                    uart_irq_o,
+
+    // GPIO external
+    input  wire [15:0]             gpio_pads_i,
+    output wire [15:0]             gpio_pads_o,
+    output wire [15:0]             gpio_pads_oen,
+
+    // Timer external
+    output wire                    timer_irq_o,
+
+    // 7-Segment display external (Basys3)
+    output wire [6:0]              seven_seg_seg_o,
+    output wire                    seven_seg_dp_o,
+    output wire [3:0]              seven_seg_an_o
 );
 
     localparam integer S_COUNT = 2;   // IFU + LSU
@@ -228,7 +241,7 @@ module soc_top_veer #(
         .ifu_axi_rresp  (ifu_axi_rresp),
         .ifu_axi_rlast  (ifu_axi_rlast),
 
-        .timer_int      (1'b0),
+        .timer_int      (timer_irq_o),
         .soft_int       (uart_irq_o),      // UART interrupt -> software IRQ
         .extintsrc_req  ('0),
         .core_id        (28'd0)
@@ -684,11 +697,11 @@ module soc_top_veer #(
     );
 
     // ------------------------------------------------------------------
-    // m02, m03, m05, m06, m07 = dummy slaves
+    // m02, m03 = dummy slaves
     // ------------------------------------------------------------------
     generate
         for (gi = 2; gi < 8; gi = gi + 1) begin : gen_dummy
-            if (gi != 4) begin : dummy_slave
+            if (gi != 4 && gi != 5 && gi != 6 && gi != 7) begin : dummy_slave
                 axi_dummy_slave #(
                     .DATA_WIDTH(DATA_WIDTH),
                     .ADDR_WIDTH(ADDR_WIDTH),
@@ -712,6 +725,120 @@ module soc_top_veer #(
             end
         end
     endgenerate
+
+    // ------------------------------------------------------------------
+    // m05 = Timer (0x5000_0000)
+    // ------------------------------------------------------------------
+    axi_timer #(
+        .TIMER_WIDTH         (32),
+        .AXI_DATA_WIDTH      (DATA_WIDTH),
+        .AXI_ADDR_WIDTH      (ADDR_WIDTH),
+        .AXI_ID_WIDTH        (ID_WIDTH),
+        .AXI_STRB_WIDTH      (STRB_WIDTH),
+        .BASE_ADDR           (32'h5000_0000),
+        .TIMER_ID_VALUE      (32'h54494D52),  // "TIMR"
+        .TIMER_VERSION_VALUE (32'h00010000)
+    ) timer_inst (
+        .clk                 (clk),
+        .rst                 (rst),
+        .s_axi_awid          (p_awid[5]),
+        .s_axi_awaddr        (p_awaddr[5]),
+        .s_axi_awlen         (p_awlen[5]),
+        .s_axi_awsize        (p_awsize[5]),
+        .s_axi_awburst       (p_awburst[5]),
+        .s_axi_awlock        (p_awlock[5]),
+        .s_axi_awcache       (p_awcache[5]),
+        .s_axi_awprot        (p_awprot[5]),
+        .s_axi_awqos         (p_awqos[5]),
+        .s_axi_awregion      (4'b0),
+        .s_axi_awvalid       (p_awvalid[5]),
+        .s_axi_awready       (p_awready[5]),
+        .s_axi_wdata         (p_wdata[5]),
+        .s_axi_wstrb         (p_wstrb[5]),
+        .s_axi_wlast         (p_wlast[5]),
+        .s_axi_wvalid        (p_wvalid[5]),
+        .s_axi_wready        (p_wready[5]),
+        .s_axi_bid           (p_bid[5]),
+        .s_axi_bresp         (p_bresp[5]),
+        .s_axi_bvalid        (p_bvalid[5]),
+        .s_axi_bready        (p_bready[5]),
+        .s_axi_arid          (p_arid[5]),
+        .s_axi_araddr        (p_araddr[5]),
+        .s_axi_arlen         (p_arlen[5]),
+        .s_axi_arsize        (p_arsize[5]),
+        .s_axi_arburst       (p_arburst[5]),
+        .s_axi_arlock        (p_arlock[5]),
+        .s_axi_arcache       (p_arcache[5]),
+        .s_axi_arprot        (p_arprot[5]),
+        .s_axi_arqos         (p_arqos[5]),
+        .s_axi_arregion      (4'b0),
+        .s_axi_arvalid       (p_arvalid[5]),
+        .s_axi_arready       (p_arready[5]),
+        .s_axi_rid           (p_rid[5]),
+        .s_axi_rdata         (p_rdata[5]),
+        .s_axi_rresp         (p_rresp[5]),
+        .s_axi_rlast         (p_rlast[5]),
+        .s_axi_rvalid        (p_rvalid[5]),
+        .s_axi_rready        (p_rready[5]),
+        .timer_irq_o         (timer_irq_o)
+    );
+
+    // ------------------------------------------------------------------
+    // m06 = GPIO (0x6000_0000)
+    // ------------------------------------------------------------------
+    axi_gpio #(
+        .GPIO_WIDTH         (16),
+        .AXI_DATA_WIDTH     (DATA_WIDTH),
+        .AXI_ADDR_WIDTH     (ADDR_WIDTH),
+        .AXI_ID_WIDTH       (ID_WIDTH),
+        .AXI_STRB_WIDTH     (STRB_WIDTH),
+        .BASE_ADDR          (32'h6000_0000)
+    ) gpio_inst (
+        .clk                (clk),
+        .rst                (rst),
+        .s_axi_awid         (p_awid[6]),
+        .s_axi_awaddr       (p_awaddr[6]),
+        .s_axi_awlen        (p_awlen[6]),
+        .s_axi_awsize       (p_awsize[6]),
+        .s_axi_awburst      (p_awburst[6]),
+        .s_axi_awlock       (p_awlock[6]),
+        .s_axi_awcache      (p_awcache[6]),
+        .s_axi_awprot       (p_awprot[6]),
+        .s_axi_awqos        (p_awqos[6]),
+        .s_axi_awregion     (4'b0),
+        .s_axi_awvalid      (p_awvalid[6]),
+        .s_axi_awready      (p_awready[6]),
+        .s_axi_wdata        (p_wdata[6]),
+        .s_axi_wstrb        (p_wstrb[6]),
+        .s_axi_wlast        (p_wlast[6]),
+        .s_axi_wvalid       (p_wvalid[6]),
+        .s_axi_wready       (p_wready[6]),
+        .s_axi_bid          (p_bid[6]),
+        .s_axi_bresp        (p_bresp[6]),
+        .s_axi_bvalid       (p_bvalid[6]),
+        .s_axi_bready       (p_bready[6]),
+        .s_axi_arid         (p_arid[6]),
+        .s_axi_araddr       (p_araddr[6]),
+        .s_axi_arlen        (p_arlen[6]),
+        .s_axi_arsize       (p_arsize[6]),
+        .s_axi_arburst      (p_arburst[6]),
+        .s_axi_arlock       (p_arlock[6]),
+        .s_axi_arcache      (p_arcache[6]),
+        .s_axi_arprot       (p_arprot[6]),
+        .s_axi_arqos        (p_arqos[6]),
+        .s_axi_arregion     (4'b0),
+        .s_axi_arvalid      (p_arvalid[6]),
+        .s_axi_arready      (p_arready[6]),
+        .s_axi_rid          (p_rid[6]),
+        .s_axi_rdata        (p_rdata[6]),
+        .s_axi_rresp        (p_rresp[6]),
+        .s_axi_rlast        (p_rlast[6]),
+        .s_axi_rvalid       (p_rvalid[6]),
+        .s_axi_rready       (p_rready[6]),
+        .gpio_i             (gpio_pads_i),
+        .gpio_o             (gpio_pads_o),
+        .gpio_oen           (gpio_pads_oen)
+    );
 
     // ------------------------------------------------------------------
     // m04 = UART (0x4000_0000) through the bridge
@@ -748,6 +875,62 @@ module soc_top_veer #(
         .uart_tx_o    (uart_tx_o),
         .uart_rx_i    (uart_rx_i),
         .uart_irq_o   (uart_irq_o)
+    );
+
+    // ------------------------------------------------------------------
+    // m07 = 7-Segment Display Controller (0x7000_0000)
+    // ------------------------------------------------------------------
+    axi_seven_seg #(
+        .AXI_DATA_WIDTH      (DATA_WIDTH),
+        .AXI_ADDR_WIDTH      (ADDR_WIDTH),
+        .AXI_ID_WIDTH        (ID_WIDTH),
+        .AXI_STRB_WIDTH      (STRB_WIDTH),
+        .BASE_ADDR           (32'h7000_0000)
+    ) seven_seg_inst (
+        .clk                 (clk),
+        .rst                 (rst),
+        .s_axi_awid          (p_awid[7]),
+        .s_axi_awaddr        (p_awaddr[7]),
+        .s_axi_awlen         (p_awlen[7]),
+        .s_axi_awsize        (p_awsize[7]),
+        .s_axi_awburst       (p_awburst[7]),
+        .s_axi_awlock        (p_awlock[7]),
+        .s_axi_awcache       (p_awcache[7]),
+        .s_axi_awprot        (p_awprot[7]),
+        .s_axi_awqos         (p_awqos[7]),
+        .s_axi_awregion      (4'b0),
+        .s_axi_awvalid       (p_awvalid[7]),
+        .s_axi_awready       (p_awready[7]),
+        .s_axi_wdata         (p_wdata[7]),
+        .s_axi_wstrb         (p_wstrb[7]),
+        .s_axi_wlast         (p_wlast[7]),
+        .s_axi_wvalid        (p_wvalid[7]),
+        .s_axi_wready        (p_wready[7]),
+        .s_axi_bid           (p_bid[7]),
+        .s_axi_bresp         (p_bresp[7]),
+        .s_axi_bvalid        (p_bvalid[7]),
+        .s_axi_bready        (p_bready[7]),
+        .s_axi_arid          (p_arid[7]),
+        .s_axi_araddr        (p_araddr[7]),
+        .s_axi_arlen         (p_arlen[7]),
+        .s_axi_arsize        (p_arsize[7]),
+        .s_axi_arburst       (p_arburst[7]),
+        .s_axi_arlock        (p_arlock[7]),
+        .s_axi_arcache       (p_arcache[7]),
+        .s_axi_arprot        (p_arprot[7]),
+        .s_axi_arqos         (p_arqos[7]),
+        .s_axi_arregion      (4'b0),
+        .s_axi_arvalid       (p_arvalid[7]),
+        .s_axi_arready       (p_arready[7]),
+        .s_axi_rid           (p_rid[7]),
+        .s_axi_rdata         (p_rdata[7]),
+        .s_axi_rresp         (p_rresp[7]),
+        .s_axi_rlast         (p_rlast[7]),
+        .s_axi_rvalid        (p_rvalid[7]),
+        .s_axi_rready        (p_rready[7]),
+        .seg_o               (seven_seg_seg_o),
+        .dp_o                (seven_seg_dp_o),
+        .an_o                (seven_seg_an_o)
     );
 
 endmodule

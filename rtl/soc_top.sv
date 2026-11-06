@@ -23,7 +23,8 @@ module soc_top #(
     parameter DATA_WIDTH = 64,
     parameter ADDR_WIDTH = 32,
     parameter STRB_WIDTH = DATA_WIDTH/8,
-    parameter ID_WIDTH   = 8
+    parameter ID_WIDTH   = 8,
+    parameter TEST_MODE  = "UART"
 )(
     input  wire                    clk,
     input  wire                    rst,          // active-high system reset
@@ -42,7 +43,16 @@ module soc_top #(
     output wire                    timer_irq_o,
 
     // CNN external
-    output wire                    cnn_irq_o
+    output wire                    cnn_irq_o,
+
+    // 7-Segment display external (Basys3)
+    output wire [6:0]              seven_seg_seg_o,
+    output wire                    seven_seg_dp_o,
+    output wire [3:0]              seven_seg_an_o,
+
+    // CPU status external
+    output wire                    cpu_done_o,
+    output wire                    cpu_pass_o
 );
 
     // ------------------------------------------------------------------
@@ -216,7 +226,8 @@ module soc_top #(
         .DATA_WIDTH(DATA_WIDTH),
         .ADDR_WIDTH(ADDR_WIDTH),
         .STRB_WIDTH(STRB_WIDTH),
-        .ID_WIDTH  (ID_WIDTH)
+        .ID_WIDTH  (ID_WIDTH),
+        .TEST_MODE (TEST_MODE)
     ) cpu_inst (
         .clk            (clk),
         .rst            (rst),
@@ -250,6 +261,9 @@ module soc_top #(
         .cpu_done       (cpu_done),
         .cpu_pass       (cpu_pass)
     );
+
+    assign cpu_done_o = cpu_done;
+    assign cpu_pass_o = cpu_pass;
 
     // ------------------------------------------------------------------
     // Instantiate AXI Interconnect (1 master x 8 slaves)
@@ -462,7 +476,7 @@ module soc_top #(
     genvar gi;
     generate
         for (gi = 2; gi < 8; gi = gi + 1) begin : gen_dummy
-            if (gi != 3 && gi != 4 && gi != 5 && gi != 6) begin : dummy_slave
+            if (gi != 3 && gi != 4 && gi != 5 && gi != 6 && gi != 7) begin : dummy_slave
                 axi_dummy_slave #(
                     .DATA_WIDTH(DATA_WIDTH),
                     .ADDR_WIDTH(ADDR_WIDTH),
@@ -1005,6 +1019,62 @@ module soc_top #(
         .s_axi_rvalid       (cnn_rvalid),
         .s_axi_rready       (cnn_rready),
         .cnn_irq_o          (cnn_irq_o)
+    );
+
+    // ------------------------------------------------------------------
+    // m07 = 7-Segment Display Controller (0x7000_0000)
+    // ------------------------------------------------------------------
+    axi_seven_seg #(
+        .AXI_DATA_WIDTH      (DATA_WIDTH),
+        .AXI_ADDR_WIDTH      (ADDR_WIDTH),
+        .AXI_ID_WIDTH        (ID_WIDTH),
+        .AXI_STRB_WIDTH      (STRB_WIDTH),
+        .BASE_ADDR           (32'h7000_0000)
+    ) seven_seg_inst (
+        .clk                 (clk),
+        .rst                 (rst),
+        .s_axi_awid          (m_axi_awid[7]),
+        .s_axi_awaddr        (m_axi_awaddr[7]),
+        .s_axi_awlen         (m_axi_awlen[7]),
+        .s_axi_awsize        (m_axi_awsize[7]),
+        .s_axi_awburst       (m_axi_awburst[7]),
+        .s_axi_awlock        (m_axi_awlock[7]),
+        .s_axi_awcache       (m_axi_awcache[7]),
+        .s_axi_awprot        (m_axi_awprot[7]),
+        .s_axi_awqos         (m_axi_awqos[7]),
+        .s_axi_awregion      (m_axi_awregion[7]),
+        .s_axi_awvalid       (m_axi_awvalid[7]),
+        .s_axi_awready       (m_axi_awready[7]),
+        .s_axi_wdata         (m_axi_wdata[7]),
+        .s_axi_wstrb         (m_axi_wstrb[7]),
+        .s_axi_wlast         (m_axi_wlast[7]),
+        .s_axi_wvalid        (m_axi_wvalid[7]),
+        .s_axi_wready        (m_axi_wready[7]),
+        .s_axi_bid           (m_axi_bid[7]),
+        .s_axi_bresp         (m_axi_bresp[7]),
+        .s_axi_bvalid        (m_axi_bvalid[7]),
+        .s_axi_bready        (m_axi_bready[7]),
+        .s_axi_arid          (m_axi_arid[7]),
+        .s_axi_araddr        (m_axi_araddr[7]),
+        .s_axi_arlen         (m_axi_arlen[7]),
+        .s_axi_arsize        (m_axi_arsize[7]),
+        .s_axi_arburst       (m_axi_arburst[7]),
+        .s_axi_arlock        (m_axi_arlock[7]),
+        .s_axi_arcache       (m_axi_arcache[7]),
+        .s_axi_arprot        (m_axi_arprot[7]),
+        .s_axi_arqos         (m_axi_arqos[7]),
+        .s_axi_arregion      (m_axi_arregion[7]),
+        .s_axi_arvalid       (m_axi_arvalid[7]),
+        .s_axi_arready       (m_axi_arready[7]),
+        .s_axi_rid           (m_axi_rid[7]),
+        .s_axi_rdata         (m_axi_rdata[7]),
+        .s_axi_rresp         (m_axi_rresp[7]),
+        .s_axi_rlast         (m_axi_rlast[7]),
+        .s_axi_rvalid        (m_axi_rvalid[7]),
+        .s_axi_rready        (m_axi_rready[7]),
+        .seg_o               (seven_seg_seg_o),
+        .dp_o                (seven_seg_dp_o),
+        .an_o                (seven_seg_an_o)
     );
 
 endmodule

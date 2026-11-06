@@ -341,7 +341,6 @@ module axi_dma_ctrl #(
     // =========================================================================
     always @(posedge clk or posedge rst) begin
         if (rst) begin
-            $display("DEBUG_DMA: BASE_ADDR = %h", BASE_ADDR);
             s_wr_state     <= S_WR_IDLE;
             s_wr_id_r      <= '0;
             s_wr_reg_sel_r <= '0;
@@ -371,8 +370,6 @@ module axi_dma_ctrl #(
                 S_WR_IDLE: begin
                     if (s_axi_awvalid && s_axi_awready &&
                         s_axi_wvalid  && s_axi_wready && !aw_burst) begin
-                        $display("DEBUG_DMA_WRITE: awaddr=0x%0h BASE=0x%0h aw_offset=0x%0h aw_in_aperture=%b aw_aligned=%b",
-                                 s_axi_awaddr, BASE_ADDR, aw_offset, aw_in_aperture, aw_aligned);
                         s_wr_id_r      <= s_axi_awid;
                         s_wr_reg_sel_r <= aw_reg_sel;
 
@@ -711,8 +708,6 @@ module axi_dma_ctrl #(
                     dma_error <= 1'b0;
 
                     if (dma_enable && dma_start_pending && (dma_len != 0)) begin
-                        $display("DEBUG_DMA_START: state=IDLE->READ_AR, state=%0d, en=%b, start_pending=%b, len=%0d, src=0x%0h, dst=0x%0h",
-                                 dma_state, dma_enable, dma_start_pending, dma_len, dma_src_addr, dma_dst_addr);
                         dma_state       <= DMA_READ_AR;
                         dma_busy        <= 1'b1;
                         beats_remaining <= dma_len;
@@ -740,7 +735,6 @@ module axi_dma_ctrl #(
                     m_axi_arregion= 4'b0;
 
                     if (m_ar_handshake) begin
-                        $display("DEBUG_DMA_READ_AR: addr=0x%0h, accepted", cur_src_addr);
                         dma_state <= DMA_READ_R;
                     end
                 end
@@ -751,7 +745,6 @@ module axi_dma_ctrl #(
                 DMA_READ_R: begin
                     m_axi_rready = 1'b1;
                     if (m_r_handshake) begin
-                        $display("DEBUG_DMA_READ_R: data=0x%0h", m_axi_rdata);
                         dma_data_buf  <= m_axi_rdata;
                         dma_buf_valid <= 1'b1;
                         dma_state     <= DMA_WRITE_AW;
@@ -775,7 +768,6 @@ module axi_dma_ctrl #(
                     m_axi_awregion= 4'b0;
 
                     if (m_aw_handshake) begin
-                        $display("DEBUG_DMA_WRITE_AW: addr=0x%0h, accepted", cur_dst_addr);
                         dma_state <= DMA_WRITE_W;
                     end
                 end
@@ -790,7 +782,6 @@ module axi_dma_ctrl #(
                     m_axi_wlast  = 1'b1;
 
                     if (m_w_handshake) begin
-                        $display("DEBUG_DMA_WRITE_W: data=0x%0h, accepted", dma_data_buf);
                         dma_state <= DMA_WRITE_B;
                     end
                 end
@@ -801,7 +792,6 @@ module axi_dma_ctrl #(
                 DMA_WRITE_B: begin
                     m_axi_bready = 1'b1;
                     if (m_b_handshake) begin
-                        $display("DEBUG_DMA_WRITE_B: resp=0x%0h", m_axi_bresp);
                         if (m_axi_bresp != 2'b00) begin
                             dma_error <= 1'b1;
                             dma_state <= DMA_DONE;
@@ -826,7 +816,6 @@ module axi_dma_ctrl #(
                 DMA_DONE: begin
                     dma_busy <= 1'b0;
                     dma_done <= 1'b1;
-                    $display("DEBUG_DMA_DONE: state=DMA_DONE, beats_remaining=%0d, dma_done=%b, dma_enable=%b", beats_remaining, dma_done, dma_enable);
 
                     if (dma_irq_en)
                         dma_done_irq <= 1'b1;

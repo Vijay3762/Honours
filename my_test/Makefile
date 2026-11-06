@@ -75,6 +75,23 @@ $(UART_HEX): $(UART_ELF) make_hex.py
 	OBJCOPY=$(OBJCOPY) $(PYTHON) make_hex.py $(UART_ELF) $(UART_HEX) 0xEE000000 --width=4
 	@head -4 $(UART_HEX)
 
+# ---- Timer test ------------------------------------------------------------
+TIMER_AS   := timer_test.S
+TIMER_ELF  := timer_test.elf
+TIMER_HEX  := timer_test.hex
+TIMER_LD   := soc_test.ld
+
+.PHONY: timer_test
+timer_test: $(TIMER_HEX)
+
+$(TIMER_ELF): $(TIMER_AS) $(TIMER_LD)
+	$(CC) $(CFLAGS) $(LDFLAGS) -T $(TIMER_LD) $< -o $@
+	@$(OBJDUMP) -d $@ | head -60
+
+$(TIMER_HEX): $(TIMER_ELF) make_hex.py
+	OBJCOPY=$(OBJCOPY) $(PYTHON) make_hex.py $(TIMER_ELF) $(TIMER_HEX) 0xEE000000 --width=4
+	@head -4 $(TIMER_HEX)
+
 # ---- helpers ---------------------------------------------------------------
 dump: program.elf $(UART_ELF)
 	$(OBJDUMP) -d -S program.elf > program.dump

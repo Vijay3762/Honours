@@ -283,44 +283,44 @@ module tb_axi_timer;
                 awvalid = 1'b0;
                 wvalid  = 1'b0;
                 resp = 2'b11;
-                return;
-            end
-            @(posedge clk);  // AW handshake occurs here
-            awvalid = 1'b0;
+            end else begin
+                @(posedge clk);  // AW handshake occurs here
+                awvalid = 1'b0;
 
-            // Wait for W handshake
-            wvalid = 1'b1;
-            timeout = 0;
-            while (!wready && timeout < TIMEOUT_CYCLES) begin
-                @(posedge clk);
-                timeout = timeout + 1;
-            end
-            if (timeout >= TIMEOUT_CYCLES) begin
-                $display("  [FAIL] axi_write: W handshake timeout (addr=0x%08h)", addr);
-                tests_failed = tests_failed + 1;
-                wvalid = 1'b0;
-                resp = 2'b11;
-                return;
-            end
-            @(posedge clk);  // W handshake occurs here
-            wvalid = 1'b0;
+                // Wait for W handshake
+                wvalid = 1'b1;
+                timeout = 0;
+                while (!wready && timeout < TIMEOUT_CYCLES) begin
+                    @(posedge clk);
+                    timeout = timeout + 1;
+                end
+                if (timeout >= TIMEOUT_CYCLES) begin
+                    $display("  [FAIL] axi_write: W handshake timeout (addr=0x%08h)", addr);
+                    tests_failed = tests_failed + 1;
+                    wvalid = 1'b0;
+                    resp = 2'b11;
+                end else begin
+                    @(posedge clk);  // W handshake occurs here
+                    wvalid = 1'b0;
 
-            // Wait for B response
-            timeout = 0;
-            while (!bvalid && timeout < TIMEOUT_CYCLES) begin
-                @(posedge clk);
-                timeout = timeout + 1;
-            end
-            if (timeout >= TIMEOUT_CYCLES) begin
-                $display("  [FAIL] axi_write: B timeout (addr=0x%08h)", addr);
-                tests_failed = tests_failed + 1;
-                resp = 2'b11;
-                return;
-            end
-            resp = bresp;
+                    // Wait for B response
+                    timeout = 0;
+                    while (!bvalid && timeout < TIMEOUT_CYCLES) begin
+                        @(posedge clk);
+                        timeout = timeout + 1;
+                    end
+                    if (timeout >= TIMEOUT_CYCLES) begin
+                        $display("  [FAIL] axi_write: B timeout (addr=0x%08h)", addr);
+                        tests_failed = tests_failed + 1;
+                        resp = 2'b11;
+                    end else begin
+                        resp = bresp;
 
-            @(posedge clk);
-            bready = 1'b0;
+                        @(posedge clk);
+                        bready = 1'b0;
+                    end
+                end
+            end
         end
     endtask
 
@@ -362,29 +362,29 @@ module tb_axi_timer;
                 arvalid = 1'b0;
                 data = 32'h0;
                 resp = 2'b11;
-                return;
-            end
-            @(posedge clk);  // AR handshake occurs here
-            arvalid = 1'b0;
+            end else begin
+                @(posedge clk);  // AR handshake occurs here
+                arvalid = 1'b0;
 
-            // Wait for R response
-            timeout = 0;
-            while (!rvalid && timeout < TIMEOUT_CYCLES) begin
-                @(posedge clk);
-                timeout = timeout + 1;
-            end
-            if (timeout >= TIMEOUT_CYCLES) begin
-                $display("  [FAIL] axi_read: R timeout (addr=0x%08h)", addr);
-                tests_failed = tests_failed + 1;
-                data = 32'h0;
-                resp = 2'b11;
-                return;
-            end
-            data = rdata[31:0];
-            resp = rresp;
+                // Wait for R response
+                timeout = 0;
+                while (!rvalid && timeout < TIMEOUT_CYCLES) begin
+                    @(posedge clk);
+                    timeout = timeout + 1;
+                end
+                if (timeout >= TIMEOUT_CYCLES) begin
+                    $display("  [FAIL] axi_read: R timeout (addr=0x%08h)", addr);
+                    tests_failed = tests_failed + 1;
+                    data = 32'h0;
+                    resp = 2'b11;
+                end else begin
+                    data = rdata[31:0];
+                    resp = rresp;
 
-            @(posedge clk);
-            rready = 1'b0;
+                    @(posedge clk);
+                    rready = 1'b0;
+                end
+            end
         end
     endtask
 

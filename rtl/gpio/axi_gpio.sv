@@ -317,15 +317,25 @@ module axi_gpio #(
     reg [3:0]               wr_strb_r;
     reg [1:0]               wr_resp_r;
     reg                     b_valid_r;
+    reg                     wr_aw_offset2_r;
+    reg                     wr_hi_lane_r;
 
     // Temporary registers to hold function results before slicing
     // (some simulators do not support direct indexing of function returns)
     reg [31:0]              nxt_out;
     reg [31:0]              nxt_dir;
 
-    // Extract lower 32 bits of WDATA and lower 4 bits of WSTRB
-    wire [31:0] w_data_lower = s_axi_wdata[31:0];
-    wire [3:0]  w_strb_lower = s_axi_wstrb[3:0];
+    // 64-bit sub-word / lane steering:
+    // High lane [63:32] is selected if strobes are only in [7:4],
+    // or if the address explicitly has bit 2 set and strobes are in [7:4].
+    wire w_hi_lane = (s_axi_wstrb[3:0] == 4'h0 && s_axi_wstrb[7:4] != 4'h0) ||
+                     (aw_offset[2] && s_axi_wstrb[7:4] != 4'h0);
+    wire [31:0] w_data_eff = w_hi_lane ? s_axi_wdata[63:32] : s_axi_wdata[31:0];
+    wire [3:0]  w_strb_eff = w_hi_lane ? s_axi_wstrb[7:4]    : s_axi_wstrb[3:0];
+
+    // Effective register selector for 64-bit masters issuing 8-byte aligned addresses
+    wire [3:0] aw_reg_sel_eff = (aw_offset[2:0] == 3'b000 && (s_axi_wstrb[3:0] == 4'h0 && s_axi_wstrb[7:4] != 4'h0)) ?
+                                (aw_reg_sel | 4'h1) : aw_reg_sel;
 
     // AW ready: accept AW in IDLE or WAIT_AW states
     assign s_axi_awready = s_axi_awvalid &&
@@ -337,18 +347,31 @@ module axi_gpio #(
                           wr_state == WR_WAIT_W ||
                           wr_state == WR_DRAIN);
 
+    // Helper wires for WAIT_W and WAIT_AW states
+    wire w_hi_wait_w = (s_axi_wstrb[3:0] == 4'h0 && s_axi_wstrb[7:4] != 4'h0) ||
+                       (wr_aw_offset2_r && s_axi_wstrb[7:4] != 4'h0);
+    wire [31:0] w_data_wait_w = w_hi_wait_w ? s_axi_wdata[63:32] : s_axi_wdata[31:0];
+    wire [3:0]  w_strb_wait_w = w_hi_wait_w ? s_axi_wstrb[7:4]    : s_axi_wstrb[3:0];
+    wire [3:0]  eff_reg_wait_w = (!wr_aw_offset2_r && (s_axi_wstrb[3:0] == 4'h0 && s_axi_wstrb[7:4] != 4'h0)) ?
+                                 (wr_reg_sel_r | 4'h1) : wr_reg_sel_r;
+
+    wire [3:0] eff_reg_wait_aw = (aw_offset[2:0] == 3'b000 && wr_hi_lane_r) ?
+                                 (aw_reg_sel | 4'h1) : aw_reg_sel;
+
     always @(posedge clk) begin
         if (rst) begin
-            wr_state     <= WR_IDLE;
-            wr_id_r      <= '0;
-            wr_reg_sel_r <= '0;
-            wr_error_r   <= RESP_OKAY;
-            wr_data_r    <= '0;
-            wr_strb_r    <= '0;
-            wr_resp_r    <= RESP_OKAY;
-            b_valid_r    <= 1'b0;
-            gpio_out_reg <= '0;
-            gpio_dir_reg <= '0;
+            wr_state        <= WR_IDLE;
+            wr_id_r         <= '0;
+            wr_reg_sel_r    <= '0;
+            wr_error_r      <= RESP_OKAY;
+            wr_data_r       <= '0;
+            wr_strb_r       <= '0;
+            wr_resp_r       <= RESP_OKAY;
+            b_valid_r       <= 1'b0;
+            wr_aw_offset2_r <= 1'b0;
+            wr_hi_lane_r    <= 1'b0;
+            gpio_out_reg    <= '0;
+            gpio_dir_reg    <= '0;
         end else begin
             case (wr_state)
                 // -------------------------------------------------------------
@@ -359,7 +382,7 @@ module axi_gpio #(
                         s_axi_wvalid && s_axi_wready && !aw_burst) begin
                         // Both AW and W in same cycle (single-beat)
                         wr_id_r      <= s_axi_awid;
-                        wr_reg_sel_r <= aw_reg_sel;
+                        wr_reg_sel_r <= aw_reg_sel_eff;
                         if (!aw_in_aperture) begin
                             wr_error_r <= RESP_DECERR;
                             wr_resp_r  <= RESP_DECERR;
@@ -368,11 +391,11 @@ module axi_gpio #(
                             wr_resp_r  <= RESP_SLVERR;
                         end else begin
                             wr_error_r <= RESP_OKAY;
-                            wr_resp_r  <= compute_write_resp(aw_reg_sel);
+                            wr_resp_r  <= compute_write_resp(aw_reg_sel_eff);
                         end
                         if (aw_in_aperture && aw_aligned) begin
-                            nxt_out = compute_next_out(aw_reg_sel, w_data_lower, w_strb_lower, gpio_out_reg);
-                            nxt_dir = compute_next_dir(aw_reg_sel, w_data_lower, w_strb_lower, gpio_dir_reg);
+                            nxt_out = compute_next_out(aw_reg_sel_eff, w_data_eff, w_strb_eff, gpio_out_reg);
+                            nxt_dir = compute_next_dir(aw_reg_sel_eff, w_data_eff, w_strb_eff, gpio_dir_reg);
                             gpio_out_reg <= nxt_out[GPIO_WIDTH-1:0];
                             gpio_dir_reg <= nxt_dir[GPIO_WIDTH-1:0];
                         end
@@ -388,17 +411,21 @@ module axi_gpio #(
                     end
                     else if (s_axi_awvalid && s_axi_awready) begin
                         // AW arrived (single), W not yet
-                        wr_state     <= WR_WAIT_W;
-                        wr_id_r      <= s_axi_awid;
-                        wr_reg_sel_r <= aw_reg_sel;
-                        wr_error_r   <= !aw_in_aperture ? RESP_DECERR :
-                                        !aw_aligned     ? RESP_SLVERR : RESP_OKAY;
+                        wr_state        <= WR_WAIT_W;
+                        wr_id_r         <= s_axi_awid;
+                        wr_reg_sel_r    <= aw_reg_sel;
+                        wr_aw_offset2_r <= aw_offset[2];
+                        wr_error_r      <= !aw_in_aperture ? RESP_DECERR :
+                                           !aw_aligned     ? RESP_SLVERR : RESP_OKAY;
                     end
                     else if (s_axi_wvalid && s_axi_wready) begin
                         // W arrived before AW
-                        wr_state  <= WR_WAIT_AW;
-                        wr_data_r <= w_data_lower;
-                        wr_strb_r <= w_strb_lower;
+                        wr_state     <= WR_WAIT_AW;
+                        wr_hi_lane_r <= (s_axi_wstrb[3:0] == 4'h0 && s_axi_wstrb[7:4] != 4'h0);
+                        wr_data_r    <= (s_axi_wstrb[3:0] == 4'h0 && s_axi_wstrb[7:4] != 4'h0) ?
+                                        s_axi_wdata[63:32] : s_axi_wdata[31:0];
+                        wr_strb_r    <= (s_axi_wstrb[3:0] == 4'h0 && s_axi_wstrb[7:4] != 4'h0) ?
+                                        s_axi_wstrb[7:4]    : s_axi_wstrb[3:0];
                     end
                 end
 
@@ -408,10 +435,10 @@ module axi_gpio #(
                 WR_WAIT_W: begin
                     if (s_axi_wvalid && s_axi_wready) begin
                         wr_resp_r <= (wr_error_r == RESP_OKAY) ?
-                                     compute_write_resp(wr_reg_sel_r) : wr_error_r;
+                                     compute_write_resp(eff_reg_wait_w) : wr_error_r;
                         if (wr_error_r == RESP_OKAY) begin
-                            nxt_out = compute_next_out(wr_reg_sel_r, w_data_lower, w_strb_lower, gpio_out_reg);
-                            nxt_dir = compute_next_dir(wr_reg_sel_r, w_data_lower, w_strb_lower, gpio_dir_reg);
+                            nxt_out = compute_next_out(eff_reg_wait_w, w_data_wait_w, w_strb_wait_w, gpio_out_reg);
+                            nxt_dir = compute_next_dir(eff_reg_wait_w, w_data_wait_w, w_strb_wait_w, gpio_dir_reg);
                             gpio_out_reg <= nxt_out[GPIO_WIDTH-1:0];
                             gpio_dir_reg <= nxt_dir[GPIO_WIDTH-1:0];
                         end
@@ -426,7 +453,7 @@ module axi_gpio #(
                 WR_WAIT_AW: begin
                     if (s_axi_awvalid && s_axi_awready) begin
                         wr_id_r      <= s_axi_awid;
-                        wr_reg_sel_r <= aw_reg_sel;
+                        wr_reg_sel_r <= eff_reg_wait_aw;
                         if (aw_burst) begin
                             wr_state   <= WR_DRAIN;
                             wr_error_r <= RESP_SLVERR;
@@ -439,11 +466,11 @@ module axi_gpio #(
                                 wr_resp_r  <= RESP_SLVERR;
                             end else begin
                                 wr_error_r <= RESP_OKAY;
-                                wr_resp_r  <= compute_write_resp(aw_reg_sel);
+                                wr_resp_r  <= compute_write_resp(eff_reg_wait_aw);
                             end
                             if (aw_in_aperture && aw_aligned) begin
-                                nxt_out = compute_next_out(aw_reg_sel, wr_data_r, wr_strb_r, gpio_out_reg);
-                                nxt_dir = compute_next_dir(aw_reg_sel, wr_data_r, wr_strb_r, gpio_dir_reg);
+                                nxt_out = compute_next_out(eff_reg_wait_aw, wr_data_r, wr_strb_r, gpio_out_reg);
+                                nxt_dir = compute_next_dir(eff_reg_wait_aw, wr_data_r, wr_strb_r, gpio_dir_reg);
                                 gpio_out_reg <= nxt_out[GPIO_WIDTH-1:0];
                                 gpio_dir_reg <= nxt_dir[GPIO_WIDTH-1:0];
                             end
@@ -543,7 +570,7 @@ module axi_gpio #(
                                 rd_data_r <= {AXI_DATA_WIDTH{1'b0}};
                                 rd_resp_r <= ar_in_aperture ? RESP_SLVERR : RESP_DECERR;
                             end else begin
-                                rd_data_r <= {AXI_DATA_WIDTH{1'b0}} | reg_read_data;
+                                rd_data_r <= {reg_read_data, reg_read_data};
                                 rd_resp_r <= compute_read_resp(ar_reg_sel);
                             end
                             r_valid_r <= 1'b1;

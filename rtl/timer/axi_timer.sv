@@ -254,6 +254,9 @@ module axi_timer #(
     // Temporary registers to hold computed values
     reg [31:0] nxt_ctrl;
 
+    // One-shot countdown completion condition (auto-clears timer_enable in write FSM)
+    wire timer_one_shot_done = timer_enable && !enable_rising_edge && counter_hit_zero && !timer_autoload;
+
     always @(posedge clk) begin
         if (rst) begin
             wr_state     <= WR_IDLE;
@@ -266,15 +269,11 @@ module axi_timer #(
             b_valid_r    <= 1'b0;
 
             // Timer registers
-            timer_counter  <= '0;
             timer_enable   <= 1'b0;
             timer_autoload <= 1'b0;
             timer_irq_en   <= 1'b0;
             timer_load     <= '0;
             timer_compare  <= {TIMER_WIDTH{1'b1}};
-            timer_match    <= 1'b0;
-            timer_overflow <= 1'b0;
-            timer_enable_prev <= 1'b0;
 
             sw_clear_match     <= 1'b0;
             sw_clear_overflow  <= 1'b0;
@@ -282,6 +281,10 @@ module axi_timer #(
             // Default: deassert software clear strobes (single-cycle pulses)
             sw_clear_match     <= 1'b0;
             sw_clear_overflow  <= 1'b0;
+
+            // One-shot timer auto-disable when counter reaches zero
+            if (timer_one_shot_done)
+                timer_enable <= 1'b0;
 
             case (wr_state)
                 // -------------------------------------------------------------
@@ -307,14 +310,10 @@ module axi_timer #(
                         if (wr_error_r == RESP_OKAY) begin
                             case (aw_reg_sel)
                                 4'h0: begin // TIMER_CTRL — RW
-                                    for (int i = 0; i < 4; i = i + 1) begin
-                                        if (w_strb_lower[i]) begin
-                                            case (i)
-                                                0: timer_enable   <= w_data_lower[0]  & 1'b1;
-                                                1: timer_autoload <= w_data_lower[1]  & 1'b1;
-                                                2: timer_irq_en   <= w_data_lower[2]  & 1'b1;
-                                            endcase
-                                        end
+                                    if (w_strb_lower[0]) begin
+                                        timer_enable   <= w_data_lower[0] & 1'b1;
+                                        timer_autoload <= w_data_lower[1] & 1'b1;
+                                        timer_irq_en   <= w_data_lower[2] & 1'b1;
                                     end
                                 end
                                 4'h1: begin // TIMER_LOAD — RW
@@ -378,14 +377,10 @@ module axi_timer #(
                         if (wr_error_r == RESP_OKAY) begin
                             case (wr_reg_sel_r)
                                 4'h0: begin // TIMER_CTRL — RW
-                                    for (int i = 0; i < 4; i = i + 1) begin
-                                        if (w_strb_lower[i]) begin
-                                            case (i)
-                                                0: timer_enable   <= w_data_lower[0]  & 1'b1;
-                                                1: timer_autoload <= w_data_lower[1]  & 1'b1;
-                                                2: timer_irq_en   <= w_data_lower[2]  & 1'b1;
-                                            endcase
-                                        end
+                                    if (w_strb_lower[0]) begin
+                                        timer_enable   <= w_data_lower[0] & 1'b1;
+                                        timer_autoload <= w_data_lower[1] & 1'b1;
+                                        timer_irq_en   <= w_data_lower[2] & 1'b1;
                                     end
                                 end
                                 4'h1: begin // TIMER_LOAD — RW
@@ -438,14 +433,10 @@ module axi_timer #(
                             if (wr_error_r == RESP_OKAY) begin
                                 case (aw_reg_sel)
                                     4'h0: begin // TIMER_CTRL — RW
-                                        for (int i = 0; i < 4; i = i + 1) begin
-                                            if (wr_strb_r[i]) begin
-                                                case (i)
-                                                    0: timer_enable   <= wr_data_r[0]  & 1'b1;
-                                                    1: timer_autoload <= wr_data_r[1]  & 1'b1;
-                                                    2: timer_irq_en   <= wr_data_r[2]  & 1'b1;
-                                                endcase
-                                            end
+                                        if (wr_strb_r[0]) begin
+                                            timer_enable   <= wr_data_r[0] & 1'b1;
+                                            timer_autoload <= wr_data_r[1] & 1'b1;
+                                            timer_irq_en   <= wr_data_r[2] & 1'b1;
                                         end
                                     end
                                     4'h1: begin // TIMER_LOAD — RW
@@ -534,14 +525,13 @@ module axi_timer #(
                         timer_counter <= timer_load;
                     end else begin
                         timer_counter <= '0;
-                        timer_enable  <= 1'b0;  // one-shot: stop at zero
                     end
-                    timer_match <= 1'b1;
-                    if (!timer_autoload && timer_load == {TIMER_WIDTH{1'b0}})
-                        timer_overflow <= 1'b1;  // zero load = overflow condition
+                    timer_match    <= 1'b1;
+                    timer_overflow <= 1'b1;
                 end else if (counter_hit_cmp) begin
-                    // Compare match (non-zero compare value)
-                    timer_match <= 1'b1;
+                    // Compare match (non-zero compare value): assert match flag and continue countdown
+                    timer_match   <= 1'b1;
+                    timer_counter <= timer_counter - 1'b1;
                 end else begin
                     timer_counter <= timer_counter - 1'b1;
                 end

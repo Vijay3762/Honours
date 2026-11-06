@@ -436,23 +436,25 @@ module tb_axi_dma;
                 $display("  [FAIL] dma_write: AW/W timeout (addr=0x%08h)", addr);
                 tests_failed = tests_failed + 1;
                 s_axi_awvalid = 1'b0; s_axi_wvalid = 1'b0;
-                resp = 2'b11; return;
-            end
-            @(posedge clk);
-            s_axi_awvalid = 1'b0; s_axi_wvalid = 1'b0;
+                resp = 2'b11;
+            end else begin
+                @(posedge clk);
+                s_axi_awvalid = 1'b0; s_axi_wvalid = 1'b0;
 
-            timeout = 0;
-            while (!s_axi_bvalid && timeout < TIMEOUT_CYCLES) begin
-                @(posedge clk); timeout = timeout + 1;
+                timeout = 0;
+                while (!s_axi_bvalid && timeout < TIMEOUT_CYCLES) begin
+                    @(posedge clk); timeout = timeout + 1;
+                end
+                if (timeout >= TIMEOUT_CYCLES) begin
+                    $display("  [FAIL] dma_write: B timeout (addr=0x%08h)", addr);
+                    tests_failed = tests_failed + 1;
+                    resp = 2'b11;
+                end else begin
+                    resp = s_axi_bresp;
+                    @(posedge clk);
+                    s_axi_bready = 1'b0;
+                end
             end
-            if (timeout >= TIMEOUT_CYCLES) begin
-                $display("  [FAIL] dma_write: B timeout (addr=0x%08h)", addr);
-                tests_failed = tests_failed + 1;
-                resp = 2'b11; return;
-            end
-            resp = s_axi_bresp;
-            @(posedge clk);
-            s_axi_bready = 1'b0;
         end
     endtask
 
@@ -488,24 +490,26 @@ module tb_axi_dma;
                 $display("  [FAIL] dma_read: AR timeout (addr=0x%08h)", addr);
                 tests_failed = tests_failed + 1;
                 s_axi_arvalid = 1'b0;
-                data = 32'h0; resp = 2'b11; return;
-            end
-            @(posedge clk);
-            s_axi_arvalid = 1'b0;
+                data = 32'h0; resp = 2'b11;
+            end else begin
+                @(posedge clk);
+                s_axi_arvalid = 1'b0;
 
-            timeout = 0;
-            while (!s_axi_rvalid && timeout < TIMEOUT_CYCLES) begin
-                @(posedge clk); timeout = timeout + 1;
+                timeout = 0;
+                while (!s_axi_rvalid && timeout < TIMEOUT_CYCLES) begin
+                    @(posedge clk); timeout = timeout + 1;
+                end
+                if (timeout >= TIMEOUT_CYCLES) begin
+                    $display("  [FAIL] dma_read: R timeout (addr=0x%08h)", addr);
+                    tests_failed = tests_failed + 1;
+                    data = 32'h0; resp = 2'b11;
+                end else begin
+                    data = s_axi_rdata[31:0];
+                    resp = s_axi_rresp;
+                    @(posedge clk);
+                    s_axi_rready = 1'b0;
+                end
             end
-            if (timeout >= TIMEOUT_CYCLES) begin
-                $display("  [FAIL] dma_read: R timeout (addr=0x%08h)", addr);
-                tests_failed = tests_failed + 1;
-                data = 32'h0; resp = 2'b11; return;
-            end
-            data = s_axi_rdata[31:0];
-            resp = s_axi_rresp;
-            @(posedge clk);
-            s_axi_rready = 1'b0;
         end
     endtask
 
