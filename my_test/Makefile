@@ -92,6 +92,99 @@ $(TIMER_HEX): $(TIMER_ELF) make_hex.py
 	OBJCOPY=$(OBJCOPY) $(PYTHON) make_hex.py $(TIMER_ELF) $(TIMER_HEX) 0xEE000000 --width=4
 	@head -4 $(TIMER_HEX)
 
+# ---- GPIO test -------------------------------------------------------------
+GPIO_AS   := gpio_test.S
+GPIO_ELF  := gpio_test.elf
+GPIO_HEX  := gpio_test.hex
+GPIO_LD   := soc_test.ld
+
+.PHONY: gpio_test
+gpio_test: $(GPIO_HEX)
+
+$(GPIO_ELF): $(GPIO_AS) $(GPIO_LD)
+	$(CC) $(CFLAGS) $(LDFLAGS) -T $(GPIO_LD) $< -o $@
+	@$(OBJDUMP) -d $@ | head -60
+
+$(GPIO_HEX): $(GPIO_ELF) make_hex.py
+	OBJCOPY=$(OBJCOPY) $(PYTHON) make_hex.py $(GPIO_ELF) $(GPIO_HEX) 0xEE000000 --width=4
+	@head -4 $(GPIO_HEX)
+
+# ---- MNIST Inference test --------------------------------------------------
+MNIST_SRCS := crt0.s mnist_inference.c
+MNIST_ELF  := mnist_inference.elf
+MNIST_HEX  := mnist_inference.hex
+MNIST_LD   := soc_test.ld
+
+.PHONY: mnist_inference
+mnist_inference: $(MNIST_HEX)
+
+$(MNIST_ELF): $(MNIST_SRCS) $(MNIST_LD) mnist_data.h
+	$(CC) $(CFLAGS) $(LDFLAGS) -T $(MNIST_LD) $(MNIST_SRCS) -o $@
+	@$(OBJDUMP) -h $@ | grep -E "Idx|\.text|\.data|\.bss"
+
+$(MNIST_HEX): $(MNIST_ELF) make_hex.py
+	OBJCOPY=$(OBJCOPY) $(PYTHON) make_hex.py $(MNIST_ELF) $(MNIST_HEX) 0xEE000000 --width=4
+	@head -4 $(MNIST_HEX)
+
+# ---- C Tests for IP + Core Co-Verification ---------------------------------
+C_TESTS := uart_test_c gpio_test_c timer_test_c seven_seg_test cnn_test relu_test pooling_test dma_test
+
+.PHONY: $(C_TESTS) all_c_tests
+
+all_c_tests: $(foreach t,$(C_TESTS),$(t).hex) mnist_inference
+
+# Generic rule for building IP C test hex files (ICCM 32-bit width at 0xEE000000)
+%_test_c.elf: crt0.s %_test.c soc_test.ld
+	$(CC) $(CFLAGS) $(LDFLAGS) -T soc_test.ld crt0.s $*_test.c -o $@
+
+%_test_c.hex: %_test_c.elf make_hex.py
+	OBJCOPY=$(OBJCOPY) $(PYTHON) make_hex.py $< $@ 0xEE000000 --width=4
+
+uart_test_c: uart_test_c.hex
+gpio_test_c: gpio_test_c.hex
+timer_test_c: timer_test_c.hex
+
+# Peripheral & Accelerator C tests
+seven_seg_test.elf: crt0.s seven_seg_test.c soc_test.ld
+	$(CC) $(CFLAGS) $(LDFLAGS) -T soc_test.ld crt0.s seven_seg_test.c -o $@
+
+seven_seg_test.hex: seven_seg_test.elf make_hex.py
+	OBJCOPY=$(OBJCOPY) $(PYTHON) make_hex.py $< $@ 0xEE000000 --width=4
+
+seven_seg_test: seven_seg_test.hex
+
+cnn_test.elf: crt0.s cnn_test.c soc_test.ld
+	$(CC) $(CFLAGS) $(LDFLAGS) -T soc_test.ld crt0.s cnn_test.c -o $@
+
+cnn_test.hex: cnn_test.elf make_hex.py
+	OBJCOPY=$(OBJCOPY) $(PYTHON) make_hex.py $< $@ 0xEE000000 --width=4
+
+cnn_test: cnn_test.hex
+
+relu_test.elf: crt0.s relu_test.c soc_test.ld
+	$(CC) $(CFLAGS) $(LDFLAGS) -T soc_test.ld crt0.s relu_test.c -o $@
+
+relu_test.hex: relu_test.elf make_hex.py
+	OBJCOPY=$(OBJCOPY) $(PYTHON) make_hex.py $< $@ 0xEE000000 --width=4
+
+relu_test: relu_test.hex
+
+pooling_test.elf: crt0.s pooling_test.c soc_test.ld
+	$(CC) $(CFLAGS) $(LDFLAGS) -T soc_test.ld crt0.s pooling_test.c -o $@
+
+pooling_test.hex: pooling_test.elf make_hex.py
+	OBJCOPY=$(OBJCOPY) $(PYTHON) make_hex.py $< $@ 0xEE000000 --width=4
+
+pooling_test: pooling_test.hex
+
+dma_test.elf: crt0.s dma_test.c soc_test.ld
+	$(CC) $(CFLAGS) $(LDFLAGS) -T soc_test.ld crt0.s dma_test.c -o $@
+
+dma_test.hex: dma_test.elf make_hex.py
+	OBJCOPY=$(OBJCOPY) $(PYTHON) make_hex.py $< $@ 0xEE000000 --width=4
+
+dma_test: dma_test.hex
+
 # ---- helpers ---------------------------------------------------------------
 dump: program.elf $(UART_ELF)
 	$(OBJDUMP) -d -S program.elf > program.dump
@@ -101,3 +194,7 @@ dump: program.elf $(UART_ELF)
 clean:
 	rm -f $(OBJS) program.elf program.bin program.hex program.dump
 	rm -f $(UART_ELF) $(UART_HEX) uart_test.dump
+	rm -f $(TIMER_ELF) $(TIMER_HEX)
+	rm -f $(GPIO_ELF) $(GPIO_HEX)
+	rm -f $(MNIST_ELF) $(MNIST_HEX)
+	rm -f *.elf *.hex *.o *.tmp

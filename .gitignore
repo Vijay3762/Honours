@@ -13,6 +13,17 @@ work/
 sim/
 sim_*/
 run/
+!verif/sim/
+verif/sim/work/
+!verif/sim/*.sh
+!uvm/sim/
+uvm/sim/work/
+!uvm/sim/*.sh
+!uvm_uart_alone/sim/
+uvm_uart_alone/sim/work/
+!uvm_uart_alone/sim/*.sh
+!uvm_uart_alone/sim/*.tcl
+!uvm_uart_alone/sim/*.rc
 
 # Synopsys VCS compilation & execution work directories
 csrc/

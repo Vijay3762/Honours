@@ -27,7 +27,7 @@ NOVAS_TAB="${NOVAS_PLI_DIR}/novas.tab"
 NOVAS_LIB="${NOVAS_PLI_DIR}/pli.a"
 
 ALL_SOURCES=(
-    "${RUN}/axi_interconnect_wrap_3x8.v"
+    "${ROOT}/rtl/interconnect/axi_interconnect_wrap_3x8.v"
     "${ROOT}/rtl/interconnect/axi_interconnect.v"
     "${ROOT}/rtl/interconnect/arbiter.v"
     "${ROOT}/rtl/interconnect/priority_encoder.v"
@@ -88,6 +88,7 @@ if [[ "$SIM" == "vcs" ]]; then
     echo "=== Compiling ==="
     "${VCS_BIN}" \
         -full64 -sverilog -timescale=1ns/1ps \
+        -debug_access+all \
         +incdir+"${ROOT}/rtl/uart/include" \
         +define+SIMULATION \
         -top tb_uart_on_interconnect \

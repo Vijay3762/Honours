@@ -1,0 +1,12 @@
+; =============================================================================
+; signals.rc - Verdi signal list for UART verification
+; =============================================================================
+Magic 271485
+
+addGroup "Clock & Reset"
+addSignal -h 15 /tb_top/clk
+addSignal -h 15 /tb_top/rstn
+
+addGroup "UART Serial Pins"
+addSignal -h 15 /tb_top/vif/uart_rx_i
+addSignal -h 15 /tb_top/vif/uart_tx_o

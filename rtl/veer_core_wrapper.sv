@@ -461,7 +461,8 @@ parameter ICCM_HEX = ""
     // instance.  The instruction cache memory (ICCM) is modelled by
     // veer_iccm_ram, the data cache memory (DCCM) is not used in this
     // configuration (DCCM_ENABLE = 0).
-    assign mem_export_if.clk = clk;
+    // Note: mem_export_if.clk is already driven by el2_mem inside the core.
+    // assign mem_export_if.clk = clk;
 
     veer_iccm_ram #(
         .ICCM_NUM_BANKS     (4),

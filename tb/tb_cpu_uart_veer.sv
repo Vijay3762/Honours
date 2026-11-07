@@ -116,6 +116,15 @@ module tb_cpu_uart_veer;
     reg [31:0] rx_byte;
     reg [31:0] lsr_value;
 
+`ifdef FSDB
+    initial begin
+        $fsdbDumpfile("dump.fsdb");
+        $fsdbDumpvars(0, tb_cpu_uart_veer, "+all");
+        $fsdbDumpSVA();
+        $fsdbDumpMDA();
+    end
+`endif
+
     initial begin
         rst = 1'b1;
         repeat (20) @(posedge clk);

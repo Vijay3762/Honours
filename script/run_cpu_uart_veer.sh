@@ -143,6 +143,15 @@ SOC_FILES=(
     "${SRC}/rtl/uart/uart_receiver.v"
     "${SRC}/rtl/uart/uart_parity_bit_compute.v"
     "${SRC}/rtl/uart/axi_internal_fifo.v"
+    "${SRC}/rtl/gpio/axi_gpio.sv"
+    "${SRC}/rtl/timer/axi_timer.sv"
+    "${SRC}/rtl/seven_seg/axi_seven_seg.sv"
+    "${SRC}/rtl/dma/axi_dma_ctrl.sv"
+    "${SRC}/rtl/cnn/axi_cnn_conv.sv"
+    "${SRC}/rtl/relu/relu_unit.sv"
+    "${SRC}/rtl/relu/axi_relu.sv"
+    "${SRC}/rtl/pooling/pooling_unit.sv"
+    "${SRC}/rtl/pooling/axi_pooling.sv"
 )
 
 TB_FILES=(

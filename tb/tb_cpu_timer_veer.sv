@@ -84,8 +84,15 @@ module tb_cpu_timer_veer;
     integer errors = 0;
 
     initial begin
+`ifdef FSDB
+        $fsdbDumpfile("dump.fsdb");
+        $fsdbDumpvars(0, tb_cpu_timer_veer, "+all");
+        $fsdbDumpSVA();
+        $fsdbDumpMDA();
+`else
         $dumpfile("cpu_timer_veer.vcd");
         $dumpvars(0, tb_cpu_timer_veer);
+`endif
 
         gpio_pads_i = 16'h0000;
 

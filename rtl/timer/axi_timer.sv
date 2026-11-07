@@ -236,10 +236,18 @@ module axi_timer #(
     reg [3:0]               wr_strb_r;
     reg [1:0]               wr_resp_r;
     reg                     b_valid_r;
+    reg                     wr_aw_offset2_r;
 
-    // Extract lower 32 bits of WDATA and lower 4 bits of WSTRB
-    wire [31:0] w_data_lower = s_axi_wdata[31:0];
-    wire [3:0]  w_strb_lower = s_axi_wstrb[3:0];
+    // 64-bit sub-word / lane steering
+    wire w_hi_lane = (s_axi_wstrb[3:0] == 4'h0 && s_axi_wstrb[7:4] != 4'h0) ||
+                     (aw_offset[2] && s_axi_wstrb[7:4] != 4'h0);
+    wire [31:0] w_data_lower = w_hi_lane ? s_axi_wdata[63:32] : s_axi_wdata[31:0];
+    wire [3:0]  w_strb_lower = w_hi_lane ? s_axi_wstrb[7:4]   : s_axi_wstrb[3:0];
+
+    wire w_hi_wait_w = (s_axi_wstrb[3:0] == 4'h0 && s_axi_wstrb[7:4] != 4'h0) ||
+                       (wr_aw_offset2_r && s_axi_wstrb[7:4] != 4'h0);
+    wire [31:0] w_data_wait_w = w_hi_wait_w ? s_axi_wdata[63:32] : s_axi_wdata[31:0];
+    wire [3:0]  w_strb_wait_w = w_hi_wait_w ? s_axi_wstrb[7:4]   : s_axi_wstrb[3:0];
 
     // AW ready: accept AW in IDLE or WAIT_AW states
     assign s_axi_awready = s_axi_awvalid &&
@@ -259,14 +267,15 @@ module axi_timer #(
 
     always @(posedge clk) begin
         if (rst) begin
-            wr_state     <= WR_IDLE;
-            wr_id_r      <= '0;
-            wr_reg_sel_r <= '0;
-            wr_error_r   <= RESP_OKAY;
-            wr_data_r    <= '0;
-            wr_strb_r    <= '0;
-            wr_resp_r    <= RESP_OKAY;
-            b_valid_r    <= 1'b0;
+            wr_state        <= WR_IDLE;
+            wr_id_r         <= '0;
+            wr_reg_sel_r    <= '0;
+            wr_error_r      <= RESP_OKAY;
+            wr_data_r       <= '0;
+            wr_strb_r       <= '0;
+            wr_resp_r       <= RESP_OKAY;
+            b_valid_r       <= 1'b0;
+            wr_aw_offset2_r <= 1'b0;
 
             // Timer registers
             timer_enable   <= 1'b0;
@@ -294,8 +303,9 @@ module axi_timer #(
                     if (s_axi_awvalid && s_axi_awready &&
                         s_axi_wvalid && s_axi_wready && !aw_burst) begin
                         // Both AW and W in same cycle (single-beat)
-                        wr_id_r      <= s_axi_awid;
-                        wr_reg_sel_r <= aw_reg_sel;
+                        wr_id_r         <= s_axi_awid;
+                        wr_reg_sel_r    <= aw_reg_sel;
+                        wr_aw_offset2_r <= aw_offset[2];
                         if (!aw_in_aperture)
                             wr_error_r <= RESP_DECERR;
                         else if (!aw_aligned)
@@ -341,16 +351,18 @@ module axi_timer #(
                         b_valid_r <= 1'b1;
                     end
                     else if (s_axi_awvalid && s_axi_awready && aw_burst) begin
-                        wr_state     <= WR_DRAIN;
-                        wr_id_r      <= s_axi_awid;
-                        wr_error_r   <= RESP_SLVERR;
-                        wr_reg_sel_r <= aw_reg_sel;
+                        wr_state        <= WR_DRAIN;
+                        wr_id_r         <= s_axi_awid;
+                        wr_error_r      <= RESP_SLVERR;
+                        wr_reg_sel_r    <= aw_reg_sel;
+                        wr_aw_offset2_r <= aw_offset[2];
                     end
                     else if (s_axi_awvalid && s_axi_awready) begin
                         // AW arrived (single), W not yet
-                        wr_state     <= WR_WAIT_W;
-                        wr_id_r      <= s_axi_awid;
-                        wr_reg_sel_r <= aw_reg_sel;
+                        wr_state        <= WR_WAIT_W;
+                        wr_id_r         <= s_axi_awid;
+                        wr_reg_sel_r    <= aw_reg_sel;
+                        wr_aw_offset2_r <= aw_offset[2];
                         if (!aw_in_aperture)
                             wr_error_r <= RESP_DECERR;
                         else if (!aw_aligned)
@@ -361,8 +373,10 @@ module axi_timer #(
                     else if (s_axi_wvalid && s_axi_wready) begin
                         // W arrived before AW
                         wr_state  <= WR_WAIT_AW;
-                        wr_data_r <= w_data_lower;
-                        wr_strb_r <= w_strb_lower;
+                        wr_data_r <= (s_axi_wstrb[3:0] == 4'h0 && s_axi_wstrb[7:4] != 4'h0) ?
+                                     s_axi_wdata[63:32] : s_axi_wdata[31:0];
+                        wr_strb_r <= (s_axi_wstrb[3:0] == 4'h0 && s_axi_wstrb[7:4] != 4'h0) ?
+                                     s_axi_wstrb[7:4] : s_axi_wstrb[3:0];
                     end
                 end
 
@@ -377,28 +391,28 @@ module axi_timer #(
                         if (wr_error_r == RESP_OKAY) begin
                             case (wr_reg_sel_r)
                                 4'h0: begin // TIMER_CTRL — RW
-                                    if (w_strb_lower[0]) begin
-                                        timer_enable   <= w_data_lower[0] & 1'b1;
-                                        timer_autoload <= w_data_lower[1] & 1'b1;
-                                        timer_irq_en   <= w_data_lower[2] & 1'b1;
+                                    if (w_strb_wait_w[0]) begin
+                                        timer_enable   <= w_data_wait_w[0] & 1'b1;
+                                        timer_autoload <= w_data_wait_w[1] & 1'b1;
+                                        timer_irq_en   <= w_data_wait_w[2] & 1'b1;
                                     end
                                 end
                                 4'h1: begin // TIMER_LOAD — RW
                                     for (int i = 0; i < 4; i = i + 1) begin
-                                        if (w_strb_lower[i])
-                                            timer_load[i*8 +: 8] <= w_data_lower[i*8 +: 8] & TIMER_MASK[i*8 +: 8];
+                                        if (w_strb_wait_w[i])
+                                            timer_load[i*8 +: 8] <= w_data_wait_w[i*8 +: 8] & TIMER_MASK[i*8 +: 8];
                                     end
                                 end
                                 4'h3: begin // TIMER_COMPARE — RW
                                     for (int i = 0; i < 4; i = i + 1) begin
-                                        if (w_strb_lower[i])
-                                            timer_compare[i*8 +: 8] <= w_data_lower[i*8 +: 8] & TIMER_MASK[i*8 +: 8];
+                                        if (w_strb_wait_w[i])
+                                            timer_compare[i*8 +: 8] <= w_data_wait_w[i*8 +: 8] & TIMER_MASK[i*8 +: 8];
                                     end
                                 end
                                 4'h4: begin // TIMER_STATUS — W1C
-                                    if (w_strb_lower[0]) begin
-                                        if (w_data_lower[0]) sw_clear_match     <= 1'b1;
-                                        if (w_data_lower[1]) sw_clear_overflow  <= 1'b1;
+                                    if (w_strb_wait_w[0]) begin
+                                        if (w_data_wait_w[0]) sw_clear_match     <= 1'b1;
+                                        if (w_data_wait_w[1]) sw_clear_overflow  <= 1'b1;
                                     end
                                 end
                                 default: ;
@@ -594,7 +608,7 @@ module axi_timer #(
                                 rd_data_r <= {AXI_DATA_WIDTH{1'b0}};
                                 rd_resp_r <= ar_in_aperture ? RESP_SLVERR : RESP_DECERR;
                             end else begin
-                                rd_data_r <= {AXI_DATA_WIDTH{1'b0}} | reg_read_data;
+                                rd_data_r <= {reg_read_data, reg_read_data};
                                 rd_resp_r <= compute_read_resp(ar_reg_sel);
                             end
                             r_valid_r <= 1'b1;

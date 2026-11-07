@@ -75,8 +75,15 @@ module tb_cpu_gpio_veer;
     integer errors = 0;
 
     initial begin
+`ifdef FSDB
+        $fsdbDumpfile("dump.fsdb");
+        $fsdbDumpvars(0, tb_cpu_gpio_veer, "+all");
+        $fsdbDumpSVA();
+        $fsdbDumpMDA();
+`else
         $dumpfile("cpu_gpio_veer.vcd");
         $dumpvars(0, tb_cpu_gpio_veer);
+`endif
 
         gpio_pads_i = 16'h5A00;
 

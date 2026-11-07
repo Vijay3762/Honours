@@ -10,21 +10,23 @@
 
 | Block | RTL | Standalone TB | Integration TB | Notes |
 |---|---|---|---|---|
-| AXI4 Interconnect (3 masters × 8 slaves) | ✅ Complete | ✅ Verified | ✅ Verified | Full address-decode, arbitration, all 8 slave ports active |
+| AXI4 Interconnect (3 masters × 10 slaves) | ✅ Complete | ✅ Verified | ✅ Verified | Full address-decode, arbitration, all 10 slave ports active |
 | AXI4-Lite UART IP (axi_uart_top) | ✅ Complete | ✅ Verified | ✅ Verified | TX/RX, FIFO, interrupts, parity, baud programming |
 | AXI UART Bridge | ✅ Complete | — | ✅ Verified | 64-bit → 32-bit width adapter, sub-word (byte lane) aware |
 | UART–Interconnect Integration | ✅ Complete | — | ✅ 19/19 pass | Full end-to-end path from master through bus to UART |
 | RISC-V Processor (SweRV EL2) | ✅ Integrated | — | ✅ 4/4 pass | VeeR EL2 RV32IMC, IFU+LSU as AXI4 masters, boots from the ICCM |
 | CPU → AXI → UART read/write test | ✅ Complete | — | ✅ All pass | Core configures the UART, transmits and receives a byte |
-| AXI GPIO (axi_gpio) | ✅ Complete | ✅ 86/86 pass | ✅ 29/29 pass (Interconnect) + 20/20 pass (CPU+Interconnect+GPIO) | 16-bit GPIO, per-bit direction, SET/CLR/TOGGLE, two-flop sync, integrated with CPU & Interconnect in iverilog |
+| AXI GPIO (axi_gpio) | ✅ Complete | ✅ 86/86 pass | ✅ 29/29 pass (Interconnect) + 20/20 pass (CPU+Interconnect+GPIO) | 16-bit GPIO, per-bit direction, SET/CLR/TOGGLE, two-flop sync, integrated with CPU & Interconnect |
 | CPU → AXI → GPIO read/write test | ✅ Complete | — | ✅ 20/20 pass | CPU core configures GPIO DIR, OUT, SET/CLR/TOGGLE, reads pad inputs via AXI bus |
 | AXI Timer (axi_timer) | ✅ Complete | ✅ 38/38 pass | ✅ 31/31 pass (Interconnect) + 14/14 pass (CPU+Interconnect+Timer) | 32-bit down-counter, auto-reload, compare match, W1C status, IRQ, verified with CPU Master & VeeR |
 | CPU → AXI → Timer read/write test | ✅ Complete | — | ✅ 14/14 pass | CPU core configures Timer LOAD, CMP, CTRL, observes countdown & compare match IRQ, clears status via W1C |
-| CNN Convolution Accelerator (axi_cnn_conv) | ✅ Complete | ✅ 41/41 pass | ✅ 29/29 pass | 3×3 kernel, 9-multiplier parallel, 4-level adder tree, bias |
+| CNN Convolution Accelerator (axi_cnn_conv) | ✅ Complete | ✅ 41/41 pass | ✅ 29/29 pass | 3×3 kernel, 9-multiplier parallel, 4-level adder tree, bias, integrated at m03 |
 | DMA Controller (`axi_dma_ctrl`) | ✅ Complete | ✅ Verified (38/38 pass) | ✅ 24/24 pass (Interconnect Port 2) | AXI4 slave (CPU programming) + AXI4 master (data movement), interrupt, W1C status, auto-restart |
-| ReLU Unit (`relu_unit` / `axi_relu`) | ✅ Complete | ✅ 76/76 pass (Core) + 35/35 pass (AXI) | ✅ 44/44 pass (Interconnect Port 3) | Element-wise max(0, x), streaming + AXI4 slave, clipping, sparsity profiling, verified on AXI interconnect |
+| ReLU Unit (`relu_unit` / `axi_relu`) | ✅ Complete | ✅ 76/76 pass (Core) + 35/35 pass (AXI) | ✅ 44/44 pass (Interconnect Port 8) | Element-wise max(0, x), streaming + AXI4 slave, clipping, sparsity profiling, integrated at m08 |
 | 7-Segment Display Controller (`axi_seven_seg`) | ✅ Complete | ✅ 46/46 pass | ✅ 11/11 pass (Interconnect Port 7) | Basys3 4-digit multiplexed cathode/anode scanner, hex decoder, raw segment mode, DP control |
-| 2x2 Spatial Pooling Unit (`pooling_unit` / `axi_pooling`) | ✅ Complete | ✅ 127/127 pass (Core) + 31/31 pass (AXI) | ✅ 14/14 pass (Interconnect) | 2x2 spatial downsampler, Max/Avg/Min/Bypass modes, argmax index, symmetric rounding, 64-bit sub-word steering |
+| 2x2 Spatial Pooling Unit (`pooling_unit` / `axi_pooling`) | ✅ Complete | ✅ 127/127 pass (Core) + 31/31 pass (AXI) | ✅ 14/14 pass (Interconnect Port 9) | 2x2 spatial downsampler, Max/Avg/Min/Bypass modes, argmax index, symmetric rounding, integrated at m09 |
+| Full SoC MNIST End-to-End Inference | ✅ Integrated | — | ✅ Ready | VeeR EL2 running full MNIST pipeline: Conv -> ReLU -> Pool -> Software FC Classifier -> 7-Seg / UART |
+| UVM Verification Environment (Core + AXI + UART) | ✅ Complete | ✅ 100% Pass (VCS & Verdi) | ✅ 100% Pass | Full UVM 1.2 testbench with AXI4 & UART VIPs, Scoreboard, Functional Coverage |
 
 ---
 
@@ -446,25 +448,24 @@ open work_cpu_uart_direct/cpu_uart_direct.wdb   # waveform in Vivado
 ## SoC Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────│
-│                        AXI4 Interconnect                            │
-│         3 Masters (VeeR EL2 IFU, VeeR EL2 LSU, DMA)                 │
-│               8 Slaves  (IMEM, DMEM, DMA-reg, CNN,                  │
-│                           UART, Timer, GPIO, 7-Seg)                 │
-└──┬──────┬──────┬──────┬──────┬──────┬──────┬────────────────────────│
-   │      │      │      │      │      │      │
- IMEM   DMEM   DMA    CNN   UART  Timer  GPIO  7-Seg
- m00    m01    m02    m03    m04   m05    m06   m07
-                              │
-                       axi_uart_bridge
-                              │
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                                   AXI4 Interconnect                                    │
+│                     3 Masters (VeeR EL2 IFU, VeeR EL2 LSU, DMA Master)                 │
+│         10 Slaves (IMEM, DMEM, DMA-reg, CNN, UART, Timer, GPIO, 7-Seg, ReLU, Pooling)   │
+└──┬──────┬──────┬──────┬──────┬───────────────┬──────┬──────┬────────┬────────┬─────────┘
+   │      │      │      │      │               │      │      │        │        │
+ IMEM   DMEM   DMA    CNN   UART             Timer  GPIO  7-Seg    ReLU    Pooling
+ m00    m01    m02    m03   m04               m05    m06   m07      m08      m09
+                             │
+                      axi_uart_bridge
+                             │
                         axi_uart_top
                          TX ──► RX (FPGA↔PC)
 ```
 
 **End-to-end flow:**
 ```
-PC → UART → DMEM → DMA → CNN Accelerator → ReLU → Feature Map → RISC-V Classifier → 7-Segment / UART
+PC → UART → DMEM → DMA → CNN Accelerator → ReLU → Pooling → RISC-V Classifier → 7-Segment / UART
 ```
 
 ---
@@ -473,14 +474,16 @@ PC → UART → DMEM → DMA → CNN Accelerator → ReLU → Feature Map → RI
 
 | Slave | Base Address | Size | Block |
 |---|---|---|---|
-| m00 | `0x8000_0000` | 256 MB | IMEM (AXI instruction memory) |
-| m01 | `0x1000_0000` | 256 MB | DMEM |
-| m02 | `0x2000_0000` | 256 MB | DMA Controller registers |
-| m03 | `0x3000_0000` | 256 MB | CNN Accelerator registers |
-| m04 | `0x4000_0000` | 256 MB | UART (via bridge) |
-| m05 | `0x5000_0000` | 256 MB | Timer |
-| m06 | `0x6000_0000` | 256 MB | GPIO |
-| m07 | `0x7000_0000` | 256 MB | 7-Segment Display Controller |
+| m00 | `0x8000_0000` | 256 MB | IMEM (AXI instruction memory / firmware) |
+| m01 | `0x1000_0000` | 256 MB | DMEM (Data memory, images, weights, features) |
+| m02 | `0x2000_0000` | 256 MB | DMA Controller registers (`axi_dma_ctrl`) |
+| m03 | `0x3000_0000` | 256 MB | CNN Conv Accelerator registers (`axi_cnn_conv`) |
+| m04 | `0x4000_0000` | 256 MB | UART (via `axi_uart_bridge`) |
+| m05 | `0x5000_0000` | 256 MB | Timer (`axi_timer`) |
+| m06 | `0x6000_0000` | 256 MB | GPIO (`axi_gpio`) |
+| m07 | `0x7000_0000` | 256 MB | 7-Segment Display Controller (`axi_seven_seg`) |
+| m08 | `0x9000_0000` | 256 MB | ReLU Unit (`axi_relu`) |
+| m09 | `0xA000_0000` | 256 MB | 2x2 Spatial Pooling Engine (`axi_pooling`) |
 
 The processor boots from `0xEE00_0000` (the ICCM of the core, outside the
 interconnect) and reaches the peripherals over the bus.
@@ -685,3 +688,88 @@ Applied element-wise to every convolution output before the feature map is store
 | UART baud rate | 115200 bps (configurable) |
 | FPGA resources | Within Basys3 limits (LUT, FF, DSP, BRAM) |
 | Recognition accuracy | ≥ 90 % on MNIST test set after quantisation |
+
+---
+
+## UVM Verification Environment (VeeR Core + AXI Interconnect + UART)
+
+An enterprise-grade **Universal Verification Methodology (UVM 1.2)** verification environment is established under `verif/` to verify the co-operative operation of the **VeeR EL2 RISC-V Core**, **AXI4 Multi-Master Interconnect**, and the **AXI UART peripheral subsystem** under **Synopsys VCS** and **Verdi**.
+
+### Architecture Overview
+
+```
+                               +---------------------------------------------------------+
+                               |                    UVM TESTBENCH TOP                    |
+                               |                                                         |
+  +----------------------+     |    +-------------------+       +-------------------+    |
+  |    AXI Master VIP    |     |    |   Scoreboard      |       | Functional        |    |
+  |  - Sequencer         |     |    |  - AXI Writes     |       | Coverage          |    |
+  |  - Driver (s02 port) |---->|    |  - AXI Reads      |       |  - AXI Bus Types  |    |
+  |  - Monitor           |     |    |  - UART TX Match  |       |  - UART Regs 100% |    |
+  +----------------------+     |    |  - UART RX Match  |       +-------------------+    |
+                               |    +-------------------+                 ^              |
+  +----------------------+     |              ^                           |              |
+  |    AXI Snoop VIP     |     |              |                           |              |
+  |  - Passive Monitor   |-----+--------------+---------------------------+              |
+  |    (m04 slave port)  |     |                                                         |
+  +----------------------+     |                                                         |
+                               |    +-----------------------------------------------+    |
+  +----------------------+     |    |                      DUT                      |    |
+  |    UART VIP          |     |    |  +------------+   +--------------+   +--------+   |    |
+  |  - Driver (rx_i)     |====>|===>|  | VeeR EL2   |-->| AXI Crossbar |-->| AXI    |==>|===> (uart_tx)
+  |  - Monitor (tx_o)    |<====|<===|  | RISC-V Core|   | (3M x 10S)   |   | Bridge |   |    |
+  +----------------------+     |    |  +------------+   +--------------+   +--------+   |    |
+                               |    +-----------------------------------------------+    |
+                               +---------------------------------------------------------+
+```
+
+### Verification IPs & Testbench Components (VIPs)
+
+1. **AXI4 Master & Passive Monitor VIP (`verif/vip/axi/`):**
+   - [`axi_agent_config.sv`](verif/vip/axi/axi_agent_config.sv): Agent configuration object managing active/passive mode, widths, and virtual interface handles.
+   - [`axi_driver.sv`](verif/vip/axi/axi_driver.sv): Active master driver retrieving `vif` via `uvm_config_db::get` and executing AW, W, B, AR, R handshakes.
+   - [`axi_monitor.sv`](verif/vip/axi/axi_monitor.sv): Bus monitor retrieving `vif` via `uvm_config_db::get` and capturing bus transactions.
+   - [`axi_base_seq.sv`](verif/vip/axi/axi_base_seq.sv), [`axi_write_seq.sv`](verif/vip/axi/axi_write_seq.sv), [`axi_read_seq.sv`](verif/vip/axi/axi_read_seq.sv): Individual reusable sequence files.
+   - [`axi_agent.sv`](verif/vip/axi/axi_agent.sv): Active and passive AXI agent.
+
+2. **UART Serial VIP (`verif/vip/uart/`):**
+   - [`uart_agent_config.sv`](verif/vip/uart/uart_agent_config.sv): Configuration object managing baud divisors, parity, and stop bits.
+   - [`uart_driver.sv`](verif/vip/uart/uart_driver.sv): Active serial driver retrieving `vif` via `uvm_config_db::get` and driving timed bitstreams into `uart_rx_i`.
+   - [`uart_monitor.sv`](verif/vip/uart/uart_monitor.sv): Mid-bit sampler monitoring `uart_tx_o` and publishing frames.
+   - [`uart_base_seq.sv`](verif/vip/uart/uart_base_seq.sv), [`uart_rx_seq.sv`](verif/vip/uart/uart_rx_seq.sv): Individual reusable UART sequences.
+   - [`uart_agent.sv`](verif/vip/uart/uart_agent.sv): Active UART agent.
+
+3. **Virtual Sequencer & Virtual Sequences (`verif/tb/`, `verif/seq/`):**
+   - [`soc_virtual_sequencer.sv`](verif/tb/soc_virtual_sequencer.sv): Top-level sequencer holding sub-sequencer handles (`master_axi_seqr`, `uart_seqr`).
+   - [`soc_base_virtual_seq.sv`](verif/seq/soc_base_virtual_seq.sv): Base virtual sequence declaring `p_sequencer`.
+   - [`soc_virtual_seq.sv`](verif/seq/soc_virtual_seq.sv): Coordinated sequence orchestrating AXI write/read and UART serial transmission/reception.
+
+4. **Environment & Configuration:**
+   - [`soc_env_config.sv`](verif/tb/soc_env_config.sv): Top-level environment configuration object.
+   - [`soc_uvm_env.sv`](verif/tb/soc_uvm_env.sv): Connects virtual sequencer, agents, scoreboard, and coverage.
+   - [`soc_uvm_scoreboard.sv`](verif/tb/soc_uvm_scoreboard.sv): Compares AXI write transactions to `THR` against UART serial output, verifies `RBR` reads against RX injected data.
+   - [`soc_uvm_coverage.sv`](verif/tb/soc_uvm_coverage.sv): Covergroups for AXI transactions and UART register access (100% coverage).
+
+### Running UVM Simulations (Synopsys VCS & Verdi)
+
+A unified execution script is provided at `verif/sim/run_uvm_vcs.sh`:
+
+```bash
+# 1. Run Coordinated SOC Virtual Sequence Test (Virtual Sequencer Orchestration)
+./verif/sim/run_uvm_vcs.sh test_virtual_seq
+
+# 2. Run direct AXI Master Read/Write & Interconnect Test
+./verif/sim/run_uvm_vcs.sh test_axi_uart_rw
+
+# 3. Run VeeR EL2 Core + AXI Interconnect + UART Co-Simulation Test
+./verif/sim/run_uvm_vcs.sh test_core_axi_uart
+```
+
+### Viewing Waveforms in Verdi
+
+Every simulation run automatically records an FSDB waveform:
+
+```bash
+verdi -sv -ssf verif/sim/work/dump.fsdb &
+```
+

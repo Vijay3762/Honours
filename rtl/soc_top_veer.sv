@@ -1,29 +1,24 @@
 // ============================================================================
 // File    : soc_top_veer.sv
 // Project : RISC-V CNN Digit Recognition SoC
-// Purpose : SoC top level with the real VeeR EL2 processor core.
+// Purpose : SoC top level with the real VeeR EL2 processor core, complete
+//           3-master x 10-slave AXI4 crossbar, DMA engine, and CNN accelerators.
 //
 // Topology:
-//   VeeR EL2 IFU (AXI4 master 0) --\
-//                                   +--> axi_interconnect (2 masters x 8 slaves)
-//   VeeR EL2 LSU (AXI4 master 1) --/            |
-//                                            |-- m00  0x8000_0000  axi_mem  (IMEM, firmware)
-//                                            |-- m01  0x1000_0000  axi_mem  (DMEM)
-//                                            |-- m02  0x2000_0000  dummy    (DMA regs)
-//                                            |-- m03  0x3000_0000  dummy    (CNN regs)
-//                                            |-- m04  0x4000_0000  axi_uart_bridge -> axi_uart_top
-//                                            |-- m05  0x5000_0000  dummy    (timer)
-//                                            |-- m06  0x6000_0000  dummy    (GPIO)
-//                                            |-- m07  0x7000_0000  dummy    (7-seg)
+//   VeeR EL2 IFU (AXI4 master 0) -----\
+//   VeeR EL2 LSU (AXI4 master 1) ------+--> axi_interconnect (3 masters x 10 slaves)
+//   DMA Master   (AXI4 master 2) -----/            |
+//                                                  |-- m00  0x8000_0000  axi_mem         (IMEM, firmware)
+//                                                  |-- m01  0x1000_0000  axi_mem         (DMEM)
+//                                                  |-- m02  0x2000_0000  axi_dma_ctrl    (DMA regs)
+//                                                  |-- m03  0x3000_0000  axi_cnn_conv    (CNN conv regs)
+//                                                  |-- m04  0x4000_0000  axi_uart_bridge -> axi_uart_top
+//                                                  |-- m05  0x5000_0000  axi_timer       (Timer)
+//                                                  |-- m06  0x6000_0000  axi_gpio        (GPIO)
+//                                                  |-- m07  0x7000_0000  axi_seven_seg   (7-segment)
+//                                                  |-- m08  0x9000_0000  axi_relu        (ReLU unit)
+//                                                  |-- m09  0xA000_0000  axi_pooling     (Pooling unit)
 //
-// The core boots from the reset vector 0x8000_0000 which is the IMEM window,
-// so the firmware hex file is pre-loaded into the IMEM axi_mem model.
-//
-// The UART is reached through the bridge in CPU64 mode (8-byte strided
-// register window) because the LSU issues 64-bit beats with 8-byte aligned
-// addresses - see rtl/axi_uart_bridge.v for the details.
-//
-// UART tx is looped back to rx internally for self-contained simulation.
 // ============================================================================
 
 `timescale 1ns/1ps
@@ -53,14 +48,68 @@ module soc_top_veer #(
     // Timer external
     output wire                    timer_irq_o,
 
+    // DMA external interrupt
+    output wire                    dma_irq_o,
+
+    // CNN external interrupt
+    output wire                    cnn_irq_o,
+
     // 7-Segment display external (Basys3)
     output wire [6:0]              seven_seg_seg_o,
     output wire                    seven_seg_dp_o,
-    output wire [3:0]              seven_seg_an_o
+    output wire [3:0]              seven_seg_an_o,
+
+    // Optional external AXI master port (for UVM VIP / testbench verification)
+    input  wire                    ext_master_en,
+    input  wire [ID_WIDTH-1:0]     ext_m_axi_awid,
+    input  wire [ADDR_WIDTH-1:0]   ext_m_axi_awaddr,
+    input  wire [7:0]              ext_m_axi_awlen,
+    input  wire [2:0]              ext_m_axi_awsize,
+    input  wire [1:0]              ext_m_axi_awburst,
+    input  wire                    ext_m_axi_awlock,
+    input  wire [3:0]              ext_m_axi_awcache,
+    input  wire [2:0]              ext_m_axi_awprot,
+    input  wire [3:0]              ext_m_axi_awqos,
+    input  wire                    ext_m_axi_awvalid,
+    output wire                    ext_m_axi_awready,
+    input  wire [DATA_WIDTH-1:0]   ext_m_axi_wdata,
+    input  wire [STRB_WIDTH-1:0]   ext_m_axi_wstrb,
+    input  wire                    ext_m_axi_wlast,
+    input  wire                    ext_m_axi_wvalid,
+    output wire                    ext_m_axi_wready,
+    output wire [ID_WIDTH-1:0]     ext_m_axi_bid,
+    output wire [1:0]              ext_m_axi_bresp,
+    output wire                    ext_m_axi_bvalid,
+    input  wire                    ext_m_axi_bready,
+    input  wire [ID_WIDTH-1:0]     ext_m_axi_arid,
+    input  wire [ADDR_WIDTH-1:0]   ext_m_axi_araddr,
+    input  wire [7:0]              ext_m_axi_arlen,
+    input  wire [2:0]              ext_m_axi_arsize,
+    input  wire [1:0]              ext_m_axi_arburst,
+    input  wire                    ext_m_axi_arlock,
+    input  wire [3:0]              ext_m_axi_arcache,
+    input  wire [2:0]              ext_m_axi_arprot,
+    input  wire [3:0]              ext_m_axi_arqos,
+    input  wire                    ext_m_axi_arvalid,
+    output wire                    ext_m_axi_arready,
+    output wire [ID_WIDTH-1:0]     ext_m_axi_rid,
+    output wire [DATA_WIDTH-1:0]   ext_m_axi_rdata,
+    output wire [1:0]              ext_m_axi_rresp,
+    output wire                    ext_m_axi_rlast,
+    output wire                    ext_m_axi_rvalid,
+    input  wire                    ext_m_axi_rready
 );
 
-    localparam integer S_COUNT = 2;   // IFU + LSU
-    localparam integer M_COUNT = 8;   // peripherals
+    localparam integer S_COUNT = 3;   // IFU + LSU + DMA Master
+    localparam integer M_COUNT = 10;  // IMEM, DMEM, DMA, CNN, UART, TIMER, GPIO, 7-SEG, RELU, POOL
+
+    // ------------------------------------------------------------------
+    // Interrupt lines to PIC
+    // ------------------------------------------------------------------
+    wire [31:1] extintsrc_req;
+    assign extintsrc_req[1]    = dma_irq_o;
+    assign extintsrc_req[2]    = cnn_irq_o;
+    assign extintsrc_req[31:3] = '0;
 
     // ------------------------------------------------------------------
     // VeeR EL2 core
@@ -149,6 +198,46 @@ module soc_top_veer #(
     wire [1:0]              ifu_axi_rresp;
     wire                    ifu_axi_rlast;
 
+    // DMA AXI4 master
+    wire [ID_WIDTH-1:0]     dma_m_axi_awid;
+    wire [ADDR_WIDTH-1:0]   dma_m_axi_awaddr;
+    wire [7:0]              dma_m_axi_awlen;
+    wire [2:0]              dma_m_axi_awsize;
+    wire [1:0]              dma_m_axi_awburst;
+    wire                    dma_m_axi_awlock;
+    wire [3:0]              dma_m_axi_awcache;
+    wire [2:0]              dma_m_axi_awprot;
+    wire [3:0]              dma_m_axi_awqos;
+    wire [3:0]              dma_m_axi_awregion;
+    wire                    dma_m_axi_awvalid;
+    wire                    dma_m_axi_awready;
+    wire [DATA_WIDTH-1:0]   dma_m_axi_wdata;
+    wire [STRB_WIDTH-1:0]   dma_m_axi_wstrb;
+    wire                    dma_m_axi_wlast;
+    wire                    dma_m_axi_wvalid;
+    wire                    dma_m_axi_wready;
+    wire [ID_WIDTH-1:0]     dma_m_axi_bid;
+    wire [1:0]              dma_m_axi_bresp;
+    wire                    dma_m_axi_bvalid;
+    wire                    dma_m_axi_bready;
+    wire [ID_WIDTH-1:0]     dma_m_axi_arid;
+    wire [ADDR_WIDTH-1:0]   dma_m_axi_araddr;
+    wire [7:0]              dma_m_axi_arlen;
+    wire [2:0]              dma_m_axi_arsize;
+    wire [1:0]              dma_m_axi_arburst;
+    wire                    dma_m_axi_arlock;
+    wire [3:0]              dma_m_axi_arcache;
+    wire [2:0]              dma_m_axi_arprot;
+    wire [3:0]              dma_m_axi_arqos;
+    wire [3:0]              dma_m_axi_arregion;
+    wire                    dma_m_axi_arvalid;
+    wire                    dma_m_axi_arready;
+    wire [ID_WIDTH-1:0]     dma_m_axi_rid;
+    wire [DATA_WIDTH-1:0]   dma_m_axi_rdata;
+    wire [1:0]              dma_m_axi_rresp;
+    wire                    dma_m_axi_rlast;
+    wire                    dma_m_axi_rvalid;
+    wire                    dma_m_axi_rready;
 
     veer_core_wrapper #(
         .ICCM_HEX       (ICCM_HEX)
@@ -242,13 +331,13 @@ module soc_top_veer #(
         .ifu_axi_rlast  (ifu_axi_rlast),
 
         .timer_int      (timer_irq_o),
-        .soft_int       (uart_irq_o),      // UART interrupt -> software IRQ
-        .extintsrc_req  ('0),
+        .soft_int       (uart_irq_o),
+        .extintsrc_req  (extintsrc_req),
         .core_id        (28'd0)
     );
 
     // ------------------------------------------------------------------
-    // Interconnect slave side (2 masters: 0 = IFU, 1 = LSU)
+    // Interconnect slave side (3 masters: 0 = IFU, 1 = LSU, 2 = DMA)
     // ------------------------------------------------------------------
     wire [S_COUNT*ID_WIDTH-1:0]     s_axi_awid;
     wire [S_COUNT*ADDR_WIDTH-1:0]   s_axi_awaddr;
@@ -311,7 +400,6 @@ module soc_top_veer #(
     assign s_axi_wvalid [0]              = ifu_axi_wvalid;
     assign ifu_axi_wready                = s_axi_wready[0];
 
-    // B channel: the interconnect drives the response back to the master
     assign ifu_axi_bid                   = s_axi_bid    [ID_WIDTH-1:0];
     assign ifu_axi_bresp                 = s_axi_bresp  [1:0];
     assign ifu_axi_bvalid                = s_axi_bvalid [0];
@@ -329,7 +417,6 @@ module soc_top_veer #(
     assign s_axi_arvalid[0]              = ifu_axi_arvalid;
     assign ifu_axi_arready                = s_axi_arready[0];
 
-    // R channel: the interconnect drives the response back to the master
     assign ifu_axi_rid                   = s_axi_rid    [ID_WIDTH-1:0];
     assign ifu_axi_rdata                 = s_axi_rdata  [DATA_WIDTH-1:0];
     assign ifu_axi_rresp                 = s_axi_rresp  [1:0];
@@ -356,7 +443,6 @@ module soc_top_veer #(
     assign s_axi_wvalid [1]              = lsu_axi_wvalid;
     assign lsu_axi_wready                = s_axi_wready[1];
 
-    // B channel: the interconnect drives the response back to the master
     assign lsu_axi_bid                   = s_axi_bid    [2*ID_WIDTH-1:ID_WIDTH];
     assign lsu_axi_bresp                 = s_axi_bresp  [3:2];
     assign lsu_axi_bvalid                = s_axi_bvalid [1];
@@ -374,7 +460,6 @@ module soc_top_veer #(
     assign s_axi_arvalid[1]              = lsu_axi_arvalid;
     assign lsu_axi_arready                = s_axi_arready[1];
 
-    // R channel: the interconnect drives the response back to the master
     assign lsu_axi_rid                   = s_axi_rid    [2*ID_WIDTH-1:ID_WIDTH];
     assign lsu_axi_rdata                 = s_axi_rdata  [2*DATA_WIDTH-1:DATA_WIDTH];
     assign lsu_axi_rresp                 = s_axi_rresp  [3:2];
@@ -382,8 +467,62 @@ module soc_top_veer #(
     assign lsu_axi_rvalid                = s_axi_rvalid [1];
     assign s_axi_rready[1]               = lsu_axi_rready;
 
+    // ---- master 2: DMA Master / External AXI Master (Muxed) ---------------
+    assign s_axi_awid   [3*ID_WIDTH-1:2*ID_WIDTH]     = ext_master_en ? ext_m_axi_awid    : dma_m_axi_awid;
+    assign s_axi_awaddr [3*ADDR_WIDTH-1:2*ADDR_WIDTH] = ext_master_en ? ext_m_axi_awaddr  : dma_m_axi_awaddr;
+    assign s_axi_awlen  [23:16]                       = ext_master_en ? ext_m_axi_awlen   : dma_m_axi_awlen;
+    assign s_axi_awsize [8:6]                         = ext_master_en ? ext_m_axi_awsize  : dma_m_axi_awsize;
+    assign s_axi_awburst[5:4]                         = ext_master_en ? ext_m_axi_awburst : dma_m_axi_awburst;
+    assign s_axi_awlock [2]                           = ext_master_en ? ext_m_axi_awlock  : dma_m_axi_awlock;
+    assign s_axi_awcache[11:8]                        = ext_master_en ? ext_m_axi_awcache : dma_m_axi_awcache;
+    assign s_axi_awprot [8:6]                         = ext_master_en ? ext_m_axi_awprot  : dma_m_axi_awprot;
+    assign s_axi_awqos  [11:8]                        = ext_master_en ? ext_m_axi_awqos   : dma_m_axi_awqos;
+    assign s_axi_awvalid[2]                           = ext_master_en ? ext_m_axi_awvalid : dma_m_axi_awvalid;
+    assign dma_m_axi_awready                          = ext_master_en ? 1'b0              : s_axi_awready[2];
+    assign ext_m_axi_awready                          = ext_master_en ? s_axi_awready[2]  : 1'b0;
+
+    assign s_axi_wdata  [3*DATA_WIDTH-1:2*DATA_WIDTH] = ext_master_en ? ext_m_axi_wdata   : dma_m_axi_wdata;
+    assign s_axi_wstrb  [3*STRB_WIDTH-1:2*STRB_WIDTH] = ext_master_en ? ext_m_axi_wstrb   : dma_m_axi_wstrb;
+    assign s_axi_wlast  [2]                           = ext_master_en ? ext_m_axi_wlast   : dma_m_axi_wlast;
+    assign s_axi_wvalid [2]                           = ext_master_en ? ext_m_axi_wvalid  : dma_m_axi_wvalid;
+    assign dma_m_axi_wready                           = ext_master_en ? 1'b0              : s_axi_wready[2];
+    assign ext_m_axi_wready                           = ext_master_en ? s_axi_wready[2]   : 1'b0;
+
+    assign dma_m_axi_bid                              = s_axi_bid    [3*ID_WIDTH-1:2*ID_WIDTH];
+    assign dma_m_axi_bresp                            = s_axi_bresp  [5:4];
+    assign dma_m_axi_bvalid                           = ext_master_en ? 1'b0              : s_axi_bvalid [2];
+    assign ext_m_axi_bid                              = s_axi_bid    [3*ID_WIDTH-1:2*ID_WIDTH];
+    assign ext_m_axi_bresp                            = s_axi_bresp  [5:4];
+    assign ext_m_axi_bvalid                           = ext_master_en ? s_axi_bvalid [2]  : 1'b0;
+    assign s_axi_bready[2]                            = ext_master_en ? ext_m_axi_bready  : dma_m_axi_bready;
+
+    assign s_axi_arid   [3*ID_WIDTH-1:2*ID_WIDTH]     = ext_master_en ? ext_m_axi_arid    : dma_m_axi_arid;
+    assign s_axi_araddr [3*ADDR_WIDTH-1:2*ADDR_WIDTH] = ext_master_en ? ext_m_axi_araddr  : dma_m_axi_araddr;
+    assign s_axi_arlen  [23:16]                       = ext_master_en ? ext_m_axi_arlen   : dma_m_axi_arlen;
+    assign s_axi_arsize [8:6]                         = ext_master_en ? ext_m_axi_arsize  : dma_m_axi_arsize;
+    assign s_axi_arburst[5:4]                         = ext_master_en ? ext_m_axi_arburst : dma_m_axi_arburst;
+    assign s_axi_arlock [2]                           = ext_master_en ? ext_m_axi_arlock  : dma_m_axi_arlock;
+    assign s_axi_arcache[11:8]                        = ext_master_en ? ext_m_axi_arcache : dma_m_axi_arcache;
+    assign s_axi_arprot [8:6]                         = ext_master_en ? ext_m_axi_arprot  : dma_m_axi_arprot;
+    assign s_axi_arqos  [11:8]                        = ext_master_en ? ext_m_axi_arqos   : dma_m_axi_arqos;
+    assign s_axi_arvalid[2]                           = ext_master_en ? ext_m_axi_arvalid : dma_m_axi_arvalid;
+    assign dma_m_axi_arready                          = ext_master_en ? 1'b0              : s_axi_arready[2];
+    assign ext_m_axi_arready                          = ext_master_en ? s_axi_arready[2]  : 1'b0;
+
+    assign dma_m_axi_rid                              = s_axi_rid    [3*ID_WIDTH-1:2*ID_WIDTH];
+    assign dma_m_axi_rdata                            = s_axi_rdata  [3*DATA_WIDTH-1:2*DATA_WIDTH];
+    assign dma_m_axi_rresp                            = s_axi_rresp  [5:4];
+    assign dma_m_axi_rlast                            = s_axi_rlast  [2];
+    assign dma_m_axi_rvalid                           = ext_master_en ? 1'b0              : s_axi_rvalid [2];
+    assign ext_m_axi_rid                              = s_axi_rid    [3*ID_WIDTH-1:2*ID_WIDTH];
+    assign ext_m_axi_rdata                            = s_axi_rdata  [3*DATA_WIDTH-1:2*DATA_WIDTH];
+    assign ext_m_axi_rresp                            = s_axi_rresp  [5:4];
+    assign ext_m_axi_rlast                            = s_axi_rlast  [2];
+    assign ext_m_axi_rvalid                           = ext_master_en ? s_axi_rvalid [2]  : 1'b0;
+    assign s_axi_rready[2]                            = ext_master_en ? ext_m_axi_rready  : dma_m_axi_rready;
+
     // ------------------------------------------------------------------
-    // Interconnect master side (8 slaves)
+    // Interconnect master side (10 slaves)
     // ------------------------------------------------------------------
     wire [M_COUNT*ID_WIDTH-1:0]     m_axi_awid;
     wire [M_COUNT*ADDR_WIDTH-1:0]   m_axi_awaddr;
@@ -429,44 +568,44 @@ module soc_top_veer #(
     wire [M_COUNT-1:0]              m_axi_rvalid;
     wire [M_COUNT-1:0]              m_axi_rready;
 
-    // Per-port views used by the slaves
-    wire [ID_WIDTH-1:0]     p_awid   [0:7];
-    wire [ADDR_WIDTH-1:0]   p_awaddr [0:7];
-    wire [7:0]              p_awlen  [0:7];
-    wire [2:0]              p_awsize [0:7];
-    wire [1:0]              p_awburst[0:7];
-    wire                    p_awlock [0:7];
-    wire [3:0]              p_awcache[0:7];
-    wire [2:0]              p_awprot [0:7];
-    wire [3:0]              p_awqos  [0:7];
-    wire                    p_awvalid[0:7];
-    wire                    p_awready[0:7];
-    wire [DATA_WIDTH-1:0]   p_wdata  [0:7];
-    wire [STRB_WIDTH-1:0]   p_wstrb  [0:7];
-    wire                    p_wlast  [0:7];
-    wire                    p_wvalid [0:7];
-    wire                    p_wready [0:7];
-    wire [ID_WIDTH-1:0]     p_bid    [0:7];
-    wire [1:0]              p_bresp  [0:7];
-    wire                    p_bvalid [0:7];
-    wire                    p_bready [0:7];
-    wire [ID_WIDTH-1:0]     p_arid   [0:7];
-    wire [ADDR_WIDTH-1:0]   p_araddr [0:7];
-    wire [7:0]              p_arlen  [0:7];
-    wire [2:0]              p_arsize [0:7];
-    wire [1:0]              p_arburst[0:7];
-    wire                    p_arlock [0:7];
-    wire [3:0]              p_arcache[0:7];
-    wire [2:0]              p_arprot [0:7];
-    wire [3:0]              p_arqos  [0:7];
-    wire                    p_arvalid[0:7];
-    wire                    p_arready[0:7];
-    wire [ID_WIDTH-1:0]     p_rid    [0:7];
-    wire [DATA_WIDTH-1:0]   p_rdata  [0:7];
-    wire [1:0]              p_rresp  [0:7];
-    wire                    p_rlast  [0:7];
-    wire                    p_rvalid [0:7];
-    wire                    p_rready [0:7];
+    // Per-port views used by the slaves (0..9)
+    wire [ID_WIDTH-1:0]     p_awid   [0:M_COUNT-1];
+    wire [ADDR_WIDTH-1:0]   p_awaddr [0:M_COUNT-1];
+    wire [7:0]              p_awlen  [0:M_COUNT-1];
+    wire [2:0]              p_awsize [0:M_COUNT-1];
+    wire [1:0]              p_awburst[0:M_COUNT-1];
+    wire                    p_awlock [0:M_COUNT-1];
+    wire [3:0]              p_awcache[0:M_COUNT-1];
+    wire [2:0]              p_awprot [0:M_COUNT-1];
+    wire [3:0]              p_awqos  [0:M_COUNT-1];
+    wire                    p_awvalid[0:M_COUNT-1];
+    wire                    p_awready[0:M_COUNT-1];
+    wire [DATA_WIDTH-1:0]   p_wdata  [0:M_COUNT-1];
+    wire [STRB_WIDTH-1:0]   p_wstrb  [0:M_COUNT-1];
+    wire                    p_wlast  [0:M_COUNT-1];
+    wire                    p_wvalid [0:M_COUNT-1];
+    wire                    p_wready [0:M_COUNT-1];
+    wire [ID_WIDTH-1:0]     p_bid    [0:M_COUNT-1];
+    wire [1:0]              p_bresp  [0:M_COUNT-1];
+    wire                    p_bvalid [0:M_COUNT-1];
+    wire                    p_bready [0:M_COUNT-1];
+    wire [ID_WIDTH-1:0]     p_arid   [0:M_COUNT-1];
+    wire [ADDR_WIDTH-1:0]   p_araddr [0:M_COUNT-1];
+    wire [7:0]              p_arlen  [0:M_COUNT-1];
+    wire [2:0]              p_arsize [0:M_COUNT-1];
+    wire [1:0]              p_arburst[0:M_COUNT-1];
+    wire                    p_arlock [0:M_COUNT-1];
+    wire [3:0]              p_arcache[0:M_COUNT-1];
+    wire [2:0]              p_arprot [0:M_COUNT-1];
+    wire [3:0]              p_arqos  [0:M_COUNT-1];
+    wire                    p_arvalid[0:M_COUNT-1];
+    wire                    p_arready[0:M_COUNT-1];
+    wire [ID_WIDTH-1:0]     p_rid    [0:M_COUNT-1];
+    wire [DATA_WIDTH-1:0]   p_rdata  [0:M_COUNT-1];
+    wire [1:0]              p_rresp  [0:M_COUNT-1];
+    wire                    p_rlast  [0:M_COUNT-1];
+    wire                    p_rvalid [0:M_COUNT-1];
+    wire                    p_rready [0:M_COUNT-1];
 
     // Unpack the flattened interconnect master ports
     genvar gi;
@@ -490,7 +629,6 @@ module soc_top_veer #(
             assign p_wvalid [gi] = m_axi_wvalid [gi];
             assign m_axi_wready[gi] = p_wready[gi];
 
-            // Write response: the slave drives the interconnect inputs
             assign m_axi_bid    [gi*ID_WIDTH +: ID_WIDTH] = p_bid    [gi];
             assign m_axi_bresp  [gi*2 +: 2]               = p_bresp  [gi];
             assign m_axi_bvalid [gi]                      = p_bvalid [gi];
@@ -508,7 +646,6 @@ module soc_top_veer #(
             assign p_arvalid[gi] = m_axi_arvalid[gi];
             assign m_axi_arready[gi] = p_arready[gi];
 
-            // Read data: the slave drives the interconnect inputs
             assign m_axi_rid    [gi*ID_WIDTH +: ID_WIDTH] = p_rid    [gi];
             assign m_axi_rdata  [gi*DATA_WIDTH +: DATA_WIDTH] = p_rdata[gi];
             assign m_axi_rresp  [gi*2 +: 2]               = p_rresp  [gi];
@@ -519,7 +656,7 @@ module soc_top_veer #(
     endgenerate
 
     // ------------------------------------------------------------------
-    // AXI interconnect (2 masters x 8 slaves)
+    // AXI interconnect (3 masters x 10 slaves)
     // ------------------------------------------------------------------
     axi_interconnect #(
         .S_COUNT         (S_COUNT),
@@ -530,8 +667,10 @@ module soc_top_veer #(
         .ID_WIDTH        (ID_WIDTH),
         .FORWARD_ID      (0),
         .M_REGIONS       (1),
-        // LSB = port 0 (IMEM), MSB = port 7 (7-SEG)
+        // LSB = port 0 (IMEM), MSB = port 9 (POOLING)
         .M_BASE_ADDR     ({
+            32'hA000_0000,  // m09 POOLING
+            32'h9000_0000,  // m08 RELU
             32'h7000_0000,  // m07 7-SEG
             32'h6000_0000,  // m06 GPIO
             32'h5000_0000,  // m05 TIMER
@@ -541,18 +680,15 @@ module soc_top_veer #(
             32'h1000_0000,  // m01 DMEM
             32'h8000_0000   // m00 IMEM
         }),
-        .M_ADDR_WIDTH    ({
-            {32{32'd28}}, {32{32'd28}}, {32{32'd28}}, {32{32'd28}},
-            {32{32'd28}}, {32{32'd28}}, {32{32'd28}}, {32{32'd28}}
-        }),
-        // S_COUNT = 2 -> every slave is reachable from both masters
-        .M_CONNECT_READ  ({8{2'b11}}),
-        .M_CONNECT_WRITE ({8{2'b11}})
+        .M_ADDR_WIDTH    ({10{32'd28}}),
+        // S_COUNT = 3 -> every slave is reachable from all 3 masters
+        .M_CONNECT_READ  ({10{3'b111}}),
+        .M_CONNECT_WRITE ({10{3'b111}})
     ) ic_inst (
         .clk (clk),
         .rst (rst),
 
-        // Slave interface (s00 = IFU, s01 = LSU)
+        // Slave interfaces (s00 = IFU, s01 = LSU, s02 = DMA)
         .s_axi_awid   (s_axi_awid),
         .s_axi_awaddr (s_axi_awaddr),
         .s_axi_awlen  (s_axi_awlen),
@@ -596,7 +732,7 @@ module soc_top_veer #(
         .s_axi_rvalid (s_axi_rvalid),
         .s_axi_rready (s_axi_rready),
 
-        // Master interfaces (m00..m07) - to slaves
+        // Master interfaces (m00..m09) - to slaves
         .m_axi_awid   (m_axi_awid),
         .m_axi_awaddr (m_axi_awaddr),
         .m_axi_awlen  (m_axi_awlen),
@@ -678,7 +814,7 @@ module soc_top_veer #(
         .ADDR_WIDTH(ADDR_WIDTH),
         .ID_WIDTH  (ID_WIDTH),
         .BASE_ADDR (32'h1000_0000),
-        .MEM_SIZE  (32'h0000_1000)
+        .MEM_SIZE  (32'h0000_4000)    // 16 KiB DMEM for images, weights, and features
     ) dmem (
         .clk   (clk),  .rst (rst),
         .awid  (p_awid[1]),   .awaddr (p_awaddr[1]),
@@ -697,34 +833,193 @@ module soc_top_veer #(
     );
 
     // ------------------------------------------------------------------
-    // m02, m03 = dummy slaves
+    // m02 = DMA Controller (0x2000_0000)
     // ------------------------------------------------------------------
-    generate
-        for (gi = 2; gi < 8; gi = gi + 1) begin : gen_dummy
-            if (gi != 4 && gi != 5 && gi != 6 && gi != 7) begin : dummy_slave
-                axi_dummy_slave #(
-                    .DATA_WIDTH(DATA_WIDTH),
-                    .ADDR_WIDTH(ADDR_WIDTH),
-                    .ID_WIDTH  (ID_WIDTH)
-                ) dum (
-                    .clk   (clk),  .rst (rst),
-                    .awid  (p_awid[gi]),   .awaddr (p_awaddr[gi]),
-                    .awlen (p_awlen[gi]),  .awsize (p_awsize[gi]),
-                    .awburst(p_awburst[gi]), .awvalid(p_awvalid[gi]), .awready(p_awready[gi]),
-                    .wdata (p_wdata[gi]),  .wstrb (p_wstrb[gi]),
-                    .wlast (p_wlast[gi]),  .wvalid(p_wvalid[gi]),   .wready(p_wready[gi]),
-                    .bid   (p_bid[gi]),    .bresp (p_bresp[gi]),
-                    .bvalid(p_bvalid[gi]), .bready(p_bready[gi]),
-                    .arid  (p_arid[gi]),   .araddr (p_araddr[gi]),
-                    .arlen (p_arlen[gi]),  .arsize (p_arsize[gi]),
-                    .arburst(p_arburst[gi]), .arvalid(p_arvalid[gi]), .arready(p_arready[gi]),
-                    .rid   (p_rid[gi]),    .rdata (p_rdata[gi]),
-                    .rresp (p_rresp[gi]),  .rlast (p_rlast[gi]),
-                    .rvalid(p_rvalid[gi]), .rready(p_rready[gi])
-                );
-            end
-        end
-    endgenerate
+    axi_dma_ctrl #(
+        .DATA_WIDTH       (DATA_WIDTH),
+        .ADDR_WIDTH       (ADDR_WIDTH),
+        .ID_WIDTH         (ID_WIDTH),
+        .STRB_WIDTH       (STRB_WIDTH),
+        .BASE_ADDR        (32'h2000_0000)
+    ) dma_inst (
+        .clk              (clk),
+        .rst              (rst),
+        // Slave port (CPU programming)
+        .s_axi_awid       (p_awid[2]),
+        .s_axi_awaddr     (p_awaddr[2]),
+        .s_axi_awlen      (p_awlen[2]),
+        .s_axi_awsize     (p_awsize[2]),
+        .s_axi_awburst    (p_awburst[2]),
+        .s_axi_awlock     (p_awlock[2]),
+        .s_axi_awcache    (p_awcache[2]),
+        .s_axi_awprot     (p_awprot[2]),
+        .s_axi_awqos      (p_awqos[2]),
+        .s_axi_awregion   (4'b0),
+        .s_axi_awvalid    (p_awvalid[2]),
+        .s_axi_awready    (p_awready[2]),
+        .s_axi_wdata      (p_wdata[2]),
+        .s_axi_wstrb      (p_wstrb[2]),
+        .s_axi_wlast      (p_wlast[2]),
+        .s_axi_wvalid     (p_wvalid[2]),
+        .s_axi_wready     (p_wready[2]),
+        .s_axi_bid        (p_bid[2]),
+        .s_axi_bresp      (p_bresp[2]),
+        .s_axi_bvalid     (p_bvalid[2]),
+        .s_axi_bready     (p_bready[2]),
+        .s_axi_arid       (p_arid[2]),
+        .s_axi_araddr     (p_araddr[2]),
+        .s_axi_arlen      (p_arlen[2]),
+        .s_axi_arsize     (p_arsize[2]),
+        .s_axi_arburst    (p_arburst[2]),
+        .s_axi_arlock     (p_arlock[2]),
+        .s_axi_arcache    (p_arcache[2]),
+        .s_axi_arprot     (p_arprot[2]),
+        .s_axi_arqos      (p_arqos[2]),
+        .s_axi_arregion   (4'b0),
+        .s_axi_arvalid    (p_arvalid[2]),
+        .s_axi_arready    (p_arready[2]),
+        .s_axi_rid        (p_rid[2]),
+        .s_axi_rdata      (p_rdata[2]),
+        .s_axi_rresp      (p_rresp[2]),
+        .s_axi_rlast      (p_rlast[2]),
+        .s_axi_rvalid     (p_rvalid[2]),
+        .s_axi_rready     (p_rready[2]),
+        // Master port (high-throughput data movement)
+        .m_axi_awid       (dma_m_axi_awid),
+        .m_axi_awaddr     (dma_m_axi_awaddr),
+        .m_axi_awlen      (dma_m_axi_awlen),
+        .m_axi_awsize     (dma_m_axi_awsize),
+        .m_axi_awburst    (dma_m_axi_awburst),
+        .m_axi_awlock     (dma_m_axi_awlock),
+        .m_axi_awcache    (dma_m_axi_awcache),
+        .m_axi_awprot     (dma_m_axi_awprot),
+        .m_axi_awqos      (dma_m_axi_awqos),
+        .m_axi_awregion   (dma_m_axi_awregion),
+        .m_axi_awvalid    (dma_m_axi_awvalid),
+        .m_axi_awready    (dma_m_axi_awready),
+        .m_axi_wdata      (dma_m_axi_wdata),
+        .m_axi_wstrb      (dma_m_axi_wstrb),
+        .m_axi_wlast      (dma_m_axi_wlast),
+        .m_axi_wvalid     (dma_m_axi_wvalid),
+        .m_axi_wready     (dma_m_axi_wready),
+        .m_axi_bid        (dma_m_axi_bid),
+        .m_axi_bresp      (dma_m_axi_bresp),
+        .m_axi_bvalid     (dma_m_axi_bvalid),
+        .m_axi_bready     (dma_m_axi_bready),
+        .m_axi_arid       (dma_m_axi_arid),
+        .m_axi_araddr     (dma_m_axi_araddr),
+        .m_axi_arlen      (dma_m_axi_arlen),
+        .m_axi_arsize     (dma_m_axi_arsize),
+        .m_axi_arburst    (dma_m_axi_arburst),
+        .m_axi_arlock     (dma_m_axi_arlock),
+        .m_axi_arcache    (dma_m_axi_arcache),
+        .m_axi_arprot     (dma_m_axi_arprot),
+        .m_axi_arqos      (dma_m_axi_arqos),
+        .m_axi_arregion   (dma_m_axi_arregion),
+        .m_axi_arvalid    (dma_m_axi_arvalid),
+        .m_axi_arready    (dma_m_axi_arready),
+        .m_axi_rid        (dma_m_axi_rid),
+        .m_axi_rdata      (dma_m_axi_rdata),
+        .m_axi_rresp      (dma_m_axi_rresp),
+        .m_axi_rlast      (dma_m_axi_rlast),
+        .m_axi_rvalid     (dma_m_axi_rvalid),
+        .m_axi_rready     (dma_m_axi_rready),
+        .dma_irq_o        (dma_irq_o)
+    );
+
+    // ------------------------------------------------------------------
+    // m03 = CNN Convolution Accelerator (0x3000_0000)
+    // ------------------------------------------------------------------
+    axi_cnn_conv #(
+        .DATA_WIDTH       (DATA_WIDTH),
+        .AXI_DATA_WIDTH   (DATA_WIDTH),
+        .AXI_ADDR_WIDTH   (ADDR_WIDTH),
+        .AXI_ID_WIDTH     (ID_WIDTH),
+        .AXI_STRB_WIDTH   (STRB_WIDTH),
+        .BASE_ADDR        (32'h3000_0000),
+        .CNN_ID_VALUE     (32'h434E4E56),  // "CNNV"
+        .CNN_VERSION_VALUE(32'h00010000)
+    ) cnn_inst (
+        .clk              (clk),
+        .rst              (rst),
+        .s_axi_awid       (p_awid[3]),
+        .s_axi_awaddr     (p_awaddr[3]),
+        .s_axi_awlen      (p_awlen[3]),
+        .s_axi_awsize     (p_awsize[3]),
+        .s_axi_awburst    (p_awburst[3]),
+        .s_axi_awlock     (p_awlock[3]),
+        .s_axi_awcache    (p_awcache[3]),
+        .s_axi_awprot     (p_awprot[3]),
+        .s_axi_awqos      (p_awqos[3]),
+        .s_axi_awregion   (4'b0),
+        .s_axi_awvalid    (p_awvalid[3]),
+        .s_axi_awready    (p_awready[3]),
+        .s_axi_wdata      (p_wdata[3]),
+        .s_axi_wstrb      (p_wstrb[3]),
+        .s_axi_wlast      (p_wlast[3]),
+        .s_axi_wvalid     (p_wvalid[3]),
+        .s_axi_wready     (p_wready[3]),
+        .s_axi_bid        (p_bid[3]),
+        .s_axi_bresp      (p_bresp[3]),
+        .s_axi_bvalid     (p_bvalid[3]),
+        .s_axi_bready     (p_bready[3]),
+        .s_axi_arid       (p_arid[3]),
+        .s_axi_araddr     (p_araddr[3]),
+        .s_axi_arlen      (p_arlen[3]),
+        .s_axi_arsize     (p_arsize[3]),
+        .s_axi_arburst    (p_arburst[3]),
+        .s_axi_arlock     (p_arlock[3]),
+        .s_axi_arcache    (p_arcache[3]),
+        .s_axi_arprot     (p_arprot[3]),
+        .s_axi_arqos      (p_arqos[3]),
+        .s_axi_arregion   (4'b0),
+        .s_axi_arvalid    (p_arvalid[3]),
+        .s_axi_arready    (p_arready[3]),
+        .s_axi_rid        (p_rid[3]),
+        .s_axi_rdata      (p_rdata[3]),
+        .s_axi_rresp      (p_rresp[3]),
+        .s_axi_rlast      (p_rlast[3]),
+        .s_axi_rvalid     (p_rvalid[3]),
+        .s_axi_rready     (p_rready[3]),
+        .cnn_irq_o        (cnn_irq_o)
+    );
+
+    // ------------------------------------------------------------------
+    // m04 = UART (0x4000_0000) through the bridge
+    // ------------------------------------------------------------------
+    axi_uart_bridge #(
+        .IC_DATA_WIDTH (DATA_WIDTH),
+        .IC_ADDR_WIDTH (ADDR_WIDTH),
+        .IC_ID_WIDTH   (ID_WIDTH),
+        // CPU64: 8-byte strided register window for 64-bit AXI masters
+        .MAP_MODE      (1)
+    ) uart_bridge (
+        .clk          (clk),
+        .rst          (rst),
+        .s_axi_awid   (p_awid[4]),   .s_axi_awaddr (p_awaddr[4]),
+        .s_axi_awlen  (p_awlen[4]),  .s_axi_awsize (p_awsize[4]),
+        .s_axi_awburst(p_awburst[4]),.s_axi_awlock(p_awlock[4]),
+        .s_axi_awcache(p_awcache[4]),.s_axi_awprot(p_awprot[4]),
+        .s_axi_awqos  (p_awqos[4]),  .s_axi_awregion(4'b0),
+        .s_axi_awvalid(p_awvalid[4]),.s_axi_awready(p_awready[4]),
+        .s_axi_wdata  (p_wdata[4]),  .s_axi_wstrb (p_wstrb[4]),
+        .s_axi_wlast  (p_wlast[4]),  .s_axi_wvalid(p_wvalid[4]),
+        .s_axi_wready (p_wready[4]),
+        .s_axi_bid    (p_bid[4]),    .s_axi_bresp (p_bresp[4]),
+        .s_axi_bvalid (p_bvalid[4]), .s_axi_bready(p_bready[4]),
+        .s_axi_arid   (p_arid[4]),   .s_axi_araddr(p_araddr[4]),
+        .s_axi_arlen  (p_arlen[4]),  .s_axi_arsize(p_arsize[4]),
+        .s_axi_arburst(p_arburst[4]),.s_axi_arlock(p_arlock[4]),
+        .s_axi_arcache(p_arcache[4]),.s_axi_arprot(p_arprot[4]),
+        .s_axi_arqos  (p_arqos[4]),  .s_axi_arregion(4'b0),
+        .s_axi_arvalid(p_arvalid[4]),.s_axi_arready(p_arready[4]),
+        .s_axi_rid    (p_rid[4]),    .s_axi_rdata (p_rdata[4]),
+        .s_axi_rresp  (p_rresp[4]),  .s_axi_rlast (p_rlast[4]),
+        .s_axi_rvalid (p_rvalid[4]), .s_axi_rready(p_rready[4]),
+        .uart_tx_o    (uart_tx_o),
+        .uart_rx_i    (uart_rx_i),
+        .uart_irq_o   (uart_irq_o)
+    );
 
     // ------------------------------------------------------------------
     // m05 = Timer (0x5000_0000)
@@ -841,43 +1136,6 @@ module soc_top_veer #(
     );
 
     // ------------------------------------------------------------------
-    // m04 = UART (0x4000_0000) through the bridge
-    // ------------------------------------------------------------------
-    axi_uart_bridge #(
-        .IC_DATA_WIDTH (DATA_WIDTH),
-        .IC_ADDR_WIDTH (ADDR_WIDTH),
-        .IC_ID_WIDTH   (ID_WIDTH),
-        // CPU64: 8-byte strided register window for 64-bit AXI masters
-        .MAP_MODE      (1)
-    ) uart_bridge (
-        .clk    (clk),
-        .rst    (rst),
-        .s_axi_awid   (p_awid[4]),   .s_axi_awaddr (p_awaddr[4]),
-        .s_axi_awlen  (p_awlen[4]),  .s_axi_awsize (p_awsize[4]),
-        .s_axi_awburst(p_awburst[4]),.s_axi_awlock(p_awlock[4]),
-        .s_axi_awcache(p_awcache[4]),.s_axi_awprot(p_awprot[4]),
-        .s_axi_awqos  (p_awqos[4]),  .s_axi_awregion(4'b0),
-        .s_axi_awvalid(p_awvalid[4]),.s_axi_awready(p_awready[4]),
-        .s_axi_wdata  (p_wdata[4]),  .s_axi_wstrb (p_wstrb[4]),
-        .s_axi_wlast  (p_wlast[4]),  .s_axi_wvalid(p_wvalid[4]),
-        .s_axi_wready (p_wready[4]),
-        .s_axi_bid    (p_bid[4]),    .s_axi_bresp (p_bresp[4]),
-        .s_axi_bvalid (p_bvalid[4]), .s_axi_bready(p_bready[4]),
-        .s_axi_arid   (p_arid[4]),   .s_axi_araddr(p_araddr[4]),
-        .s_axi_arlen  (p_arlen[4]),  .s_axi_arsize(p_arsize[4]),
-        .s_axi_arburst(p_arburst[4]),.s_axi_arlock(p_arlock[4]),
-        .s_axi_arcache(p_arcache[4]),.s_axi_arprot(p_arprot[4]),
-        .s_axi_arqos  (p_arqos[4]),  .s_axi_arregion(4'b0),
-        .s_axi_arvalid(p_arvalid[4]),.s_axi_arready(p_arready[4]),
-        .s_axi_rid    (p_rid[4]),    .s_axi_rdata (p_rdata[4]),
-        .s_axi_rresp  (p_rresp[4]),  .s_axi_rlast (p_rlast[4]),
-        .s_axi_rvalid (p_rvalid[4]), .s_axi_rready(p_rready[4]),
-        .uart_tx_o    (uart_tx_o),
-        .uart_rx_i    (uart_rx_i),
-        .uart_irq_o   (uart_irq_o)
-    );
-
-    // ------------------------------------------------------------------
     // m07 = 7-Segment Display Controller (0x7000_0000)
     // ------------------------------------------------------------------
     axi_seven_seg #(
@@ -931,6 +1189,115 @@ module soc_top_veer #(
         .seg_o               (seven_seg_seg_o),
         .dp_o                (seven_seg_dp_o),
         .an_o                (seven_seg_an_o)
+    );
+
+    // ------------------------------------------------------------------
+    // m08 = ReLU Activation Unit (0x9000_0000)
+    // ------------------------------------------------------------------
+    axi_relu #(
+        .DATA_WIDTH          (32),
+        .AXI_DATA_WIDTH      (DATA_WIDTH),
+        .AXI_ADDR_WIDTH      (ADDR_WIDTH),
+        .AXI_ID_WIDTH        (ID_WIDTH),
+        .AXI_STRB_WIDTH      (STRB_WIDTH),
+        .REG_ADDR_WIDTH      (12),
+        .BASE_ADDR           (32'h9000_0000)
+    ) relu_inst (
+        .clk                 (clk),
+        .rst                 (rst),
+        .s_axi_awid          (p_awid[8]),
+        .s_axi_awaddr        (p_awaddr[8]),
+        .s_axi_awlen         (p_awlen[8]),
+        .s_axi_awsize        (p_awsize[8]),
+        .s_axi_awburst       (p_awburst[8]),
+        .s_axi_awlock        (p_awlock[8]),
+        .s_axi_awcache       (p_awcache[8]),
+        .s_axi_awprot        (p_awprot[8]),
+        .s_axi_awqos         (p_awqos[8]),
+        .s_axi_awregion      (4'b0),
+        .s_axi_awvalid       (p_awvalid[8]),
+        .s_axi_awready       (p_awready[8]),
+        .s_axi_wdata         (p_wdata[8]),
+        .s_axi_wstrb         (p_wstrb[8]),
+        .s_axi_wlast         (p_wlast[8]),
+        .s_axi_wvalid        (p_wvalid[8]),
+        .s_axi_wready        (p_wready[8]),
+        .s_axi_bid           (p_bid[8]),
+        .s_axi_bresp         (p_bresp[8]),
+        .s_axi_bvalid        (p_bvalid[8]),
+        .s_axi_bready        (p_bready[8]),
+        .s_axi_arid          (p_arid[8]),
+        .s_axi_araddr        (p_araddr[8]),
+        .s_axi_arlen         (p_arlen[8]),
+        .s_axi_arsize        (p_arsize[8]),
+        .s_axi_arburst       (p_arburst[8]),
+        .s_axi_arlock        (p_arlock[8]),
+        .s_axi_arcache       (p_arcache[8]),
+        .s_axi_arprot        (p_arprot[8]),
+        .s_axi_arqos         (p_arqos[8]),
+        .s_axi_arregion      (4'b0),
+        .s_axi_arvalid       (p_arvalid[8]),
+        .s_axi_arready       (p_arready[8]),
+        .s_axi_rid           (p_rid[8]),
+        .s_axi_rdata         (p_rdata[8]),
+        .s_axi_rresp         (p_rresp[8]),
+        .s_axi_rlast         (p_rlast[8]),
+        .s_axi_rvalid        (p_rvalid[8]),
+        .s_axi_rready        (p_rready[8])
+    );
+
+    // ------------------------------------------------------------------
+    // m09 = 2x2 Spatial Pooling Engine (0xA000_0000)
+    // ------------------------------------------------------------------
+    axi_pooling #(
+        .AXI_DATA_WIDTH      (DATA_WIDTH),
+        .AXI_ADDR_WIDTH      (ADDR_WIDTH),
+        .AXI_ID_WIDTH        (ID_WIDTH),
+        .AXI_STRB_WIDTH      (STRB_WIDTH),
+        .REG_ADDR_WIDTH      (12),
+        .BASE_ADDR           (32'hA000_0000)
+    ) pooling_inst (
+        .clk                 (clk),
+        .rst                 (rst),
+        .s_axi_awid          (p_awid[9]),
+        .s_axi_awaddr        (p_awaddr[9]),
+        .s_axi_awlen         (p_awlen[9]),
+        .s_axi_awsize        (p_awsize[9]),
+        .s_axi_awburst       (p_awburst[9]),
+        .s_axi_awlock        (p_awlock[9]),
+        .s_axi_awcache       (p_awcache[9]),
+        .s_axi_awprot        (p_awprot[9]),
+        .s_axi_awqos         (p_awqos[9]),
+        .s_axi_awregion      (4'b0),
+        .s_axi_awvalid       (p_awvalid[9]),
+        .s_axi_awready       (p_awready[9]),
+        .s_axi_wdata         (p_wdata[9]),
+        .s_axi_wstrb         (p_wstrb[9]),
+        .s_axi_wlast         (p_wlast[9]),
+        .s_axi_wvalid        (p_wvalid[9]),
+        .s_axi_wready        (p_wready[9]),
+        .s_axi_bid           (p_bid[9]),
+        .s_axi_bresp         (p_bresp[9]),
+        .s_axi_bvalid        (p_bvalid[9]),
+        .s_axi_bready        (p_bready[9]),
+        .s_axi_arid          (p_arid[9]),
+        .s_axi_araddr        (p_araddr[9]),
+        .s_axi_arlen         (p_arlen[9]),
+        .s_axi_arsize        (p_arsize[9]),
+        .s_axi_arburst       (p_arburst[9]),
+        .s_axi_arlock        (p_arlock[9]),
+        .s_axi_arcache       (p_arcache[9]),
+        .s_axi_arprot        (p_arprot[9]),
+        .s_axi_arqos         (p_arqos[9]),
+        .s_axi_arregion      (4'b0),
+        .s_axi_arvalid       (p_arvalid[9]),
+        .s_axi_arready       (p_arready[9]),
+        .s_axi_rid           (p_rid[9]),
+        .s_axi_rdata         (p_rdata[9]),
+        .s_axi_rresp         (p_rresp[9]),
+        .s_axi_rlast         (p_rlast[9]),
+        .s_axi_rvalid        (p_rvalid[9]),
+        .s_axi_rready        (p_rready[9])
     );
 
 endmodule
