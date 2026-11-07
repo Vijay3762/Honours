@@ -6,6 +6,11 @@
 # ------------------------------------------------------------
 # 1. Simulation Work & Run Directories
 # ------------------------------------------------------------
+# Constraint files & directories
+constraint/
+constraints/
+*.xdc
+
 # Vivado / XSim simulation directories
 gpio_sim/
 work_*/
