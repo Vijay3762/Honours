@@ -1,0 +1,420 @@
+RISC-V CNN SoC — Honours Project   |   Verification Test Plan   |   VCS U-2023.03 / Verdi U-2023.03-SP1 / Vivado XSim 2024.2
+S.No,Test Name,"Data Path Type
+(Internal / External)",Description,"Checkpoints
+(What Was Verified)",SV Tests,C Tests & .hex Generation
+Group 1 — AXI4-Lite UART Standalone Verification
+1.1,UART – Reset Verification,"Internal Data Path
+(AXI registers & TX/RX FSM reset)","Apply active-low reset to axi_uart_top and verify that all TX/RX state machines power up cleanly. Check that uart_tx is held HIGH (idle/mark state) during reset, and that LSR shows both TEMT and THRE set to 1 immediately after reset is released, confirming the transmit path is empty and ready.","• uart_tx == 1'b1 during active reset
+• LSR[6] (TEMT) = 1 after reset release
+• LSR[5] (THRE) = 1 after reset release
+• All AXI channels (AW/W/B/AR/R) quiescent","tb_axi_uart_top.v
+Task: reset_test()
+Tool: VCS U-2023.03",—
+1.2,UART – Register Access (LCR / IER / BAUD / LSR),"Internal Data Path
+(AXI4-Lite register bus transactions)","Write and read back the UART control registers over AXI4-Lite: Line Control Register (LCR) for 8N1 frame format, Interrupt Enable Register (IER) enable then disable, and baud-rate divisor via DLAB sequence (LCR[7]=1 → write BAUD_DIV → LCR[7]=0). Verify AXI handshake (BRESP/RRESP = OKAY) for all transactions.","• LCR write returns BRESP = 2'b00
+• IER write enable (0x01) and disable (0x00) — BRESP OK
+• DLAB sequence: LCR=0x83, BAUD=10, LCR=0x03 — all BRESP OK
+• LSR TEMT=1, THRE=1 confirmed after register sequence
+• No bus hang or timeout observed","tb_axi_uart_top.v
+Task: register_test()
+Tool: VCS U-2023.03",—
+1.3,"UART – TX Transmitter (8N1, multiple data patterns)","External Data Path
+(uart_tx serial pin waveform)","Verify serial transmission of five data patterns (0x00, 0xFF, 0x55, 0xAA, 0xA5) over uart_tx in 8N1 format. A calibration byte 0x55 is first sent to measure the actual TX bit period from the real waveform (start-bit negedge to D0 posedge), eliminating baud-divisor timing error. Each byte is verified bit-by-bit including the stop bit.","• TX bit time calibrated from uart_tx waveform
+• 0x00 — all 8 bits 0; stop bit HIGH
+• 0xFF — all 8 bits 1; stop bit HIGH
+• 0x55 alternating 01010101 — each bit position verified
+• 0xAA alternating 10101010 — each bit position verified
+• 0xA5 — each bit position verified
+• LSR TEMT=1 after each byte (shift register empty)
+• BRESP = 2'b00 for all THR writes","tb_axi_uart_top.v
+Tasks: tx_test(), check_uart_tx(),
+       measure_tx_bit_time()
+Tool: VCS U-2023.03",—
+1.4,"UART – RX Receiver (8N1, interrupt, DATA_READY)","External Data Path
+(uart_rx serial bit-bang & irq pin)","Drive a serial byte (0x55) into uart_rx using the 8N1 bit-bang task at the configured baud rate. Verify the RX interrupt output asserts, LSR DATA_READY bit sets, and the received byte can be read back from the RBR (THR address in read mode).","• read_interrupt == 1'b1 after full 8N1 frame received
+• LSR[0] (DATA_READY) = 1 after receive
+• RBR read returns 0x55 (data integrity verified)
+• AXI RRESP = 2'b00 for RBR read
+• IER disable clears further interrupt generation","tb_axi_uart_top.v
+Tasks: rx_test(), uart_send_byte_8n1()
+Tool: VCS U-2023.03",—
+1.5,UART – RX FIFO (4-byte sequential ordering),"Internal Data Path
+(On-chip 4-byte FIFO buffer)","Back-to-back injection of four bytes (0x11, 0x22, 0x33, 0x44) into uart_rx and verification that they are buffered in the RX FIFO in correct FIFO order. Each byte is read from RBR sequentially and compared to the expected value.","• FIFO byte 0 == 0x11
+• FIFO byte 1 == 0x22
+• FIFO byte 2 == 0x33
+• FIFO byte 3 == 0x44
+• FIFO ordering preserved across all 4 reads
+• No data loss or byte swap detected","tb_axi_uart_top.v
+Tasks: fifo_test(), uart_send_byte_8n1()
+Tool: VCS U-2023.03",—
+1.6,UART – 8N2 Frame Format (two stop bits),"External Data Path
+(uart_tx stop bit 1 & 2 pin timing)","Configure LCR for 8N2 (8 data bits, 2 stop bits, no parity) and transmit 0x55. Sample the uart_tx line at the expected bit centers using the calibrated bit time and verify that both stop bits are driven HIGH after the 8th data bit.","• First stop bit == 1'b1 at (bit_time × 9.5) from start negedge
+• Second stop bit == 1'b1 at (bit_time × 10.5) from start negedge
+• LCR write to 8N2 returns BRESP = 2'b00","tb_axi_uart_top.v
+Task: stop_bit_test()
+Tool: VCS U-2023.03",—
+1.7,"UART – Parity (8O1 odd, 8E1 even)","External Data Path
+(uart_tx parity bit serial pin)",Verify hardware parity generation for both odd and even modes. Send 0x55 (four '1' bits) with LCR=8O1: odd parity requires bit=1. Send 0x55 with LCR=8E1: even parity requires bit=0. Parity bit sampled one bit-period after D7.,"• LCR=0x0B (8O1): parity bit == 1'b1 for 0x55
+• LCR=0x1B (8E1): parity bit == 1'b0 for 0x55
+• Stop bit == 1'b1 in both cases
+• BRESP = 2'b00 for both LCR and THR writes","tb_axi_uart_top.v
+Task: parity_test()
+Tool: VCS U-2023.03",—
+1.8,UART – Invalid Register Write (undefined offset 0x10),"Internal Data Path
+(AXI slave address decode & response)",Write to an undefined UART register offset (0x10) with data 0xDEADBEEF. The AXI slave must complete the transaction gracefully without hanging the bus.,"• AXI write to offset 0x10 completes (no simulation hang)
+• BRESP returned without timeout
+• Subsequent access to valid registers still functions normally","tb_axi_uart_top.v
+Task: invalid_register_test()
+Tool: VCS U-2023.03",—
+1.9,UART – Reset During Active Transmission,"External Data Path
+(uart_tx pin reset recovery to mark state)","Begin transmitting 0xAA and assert reset 3 bit-periods into the frame (mid-transmission). Verify that uart_tx immediately aborts transmission and recovers to mark (HIGH) state, and that all internal shift registers reset cleanly.","• uart_tx == 1'b1 within 5 clocks of reset assertion
+• No stuck-low or stuck-data condition on uart_tx
+• Post-reset transmission of 0x55 completes successfully","tb_axi_uart_top.v
+Task: reset_during_tx()
+Tool: VCS U-2023.03",—
+Group 2 — AXI4 Interconnect Standalone Verification
+2.1,Interconnect – Single-Master Write/Read to All 8 Slaves,"Internal Data Path
+(AXI crossbar routing M0 → m00–m07)","Drive Master 0 to perform a 64-bit write followed by a read to each of the 8 slave ports (IMEM, DMEM, DMA, CNN, UART, Timer, GPIO, 7-Seg) sequentially. Verify address decoding, crossbar routing, and OKAY responses across all ports.","• BRESP = 2'b00 for writes to all 8 slaves (m00–m07)
+• RRESP = 2'b00 for reads from all 8 slaves
+• Read data strictly matches write data for all 8 ports
+• No misrouted transactions or address aliasing","tb_axi_interconnect_wrap_3x8.sv
+Task: test_single_master_all_slaves()
+Tool: VCS U-2023.03",—
+2.2,Interconnect – All 3 Masters Access Different Slaves Simultaneously,"Internal Data Path
+(Parallel crossbar channels M0, M1, M2)","Issue concurrent transactions: Master 0 → IMEM, Master 1 → DMEM, Master 2 → DMA, all in the same clock cycle. Verify that the crossbar grants all three in parallel without serialization overhead.","• All 3 masters complete writes with BRESP = 2'b00
+• All 3 masters complete reads with RRESP = 2'b00
+• Zero contention stall observed for disjoint slave targets
+• Maximum crossbar throughput achieved","tb_axi_interconnect_wrap_3x8.sv
+Task: test_all_masters_different_slaves()
+Tool: VCS U-2023.03",—
+2.3,Interconnect – Multi-Master Contention (Round-Robin Arbitration),"Internal Data Path
+(Bus arbiter fair scheduling on slave m01)","Multiple masters request the same slave (DMEM, m01) concurrently. Verify that the round-robin arbiter grants access fairly without starvation and that each master gets its write/read completed in scheduled turn.","• Master 0 granted first, completes transaction
+• Master 1 granted second, completes transaction
+• Master 2 granted third, completes transaction
+• No master starved; round-robin fairness verified
+• Data integrity intact across all 3 transactions","tb_axi_interconnect_wrap_3x8.sv
+Task: test_multi_master_contention()
+Tool: VCS U-2023.03",—
+Group 3 — UART ↔ AXI Interconnect Integration Verification
+3.1,UART–Interconnect – Reset / Power-On Sanity (T1),"Internal Data Path
+(m04 → bridge → UART reset propagation)","System reset applied through top-level. Verify that uart_tx is held HIGH throughout reset and that an AXI read of LSR (address 0x4000_0014) through interconnect and bridge immediately after reset returns TEMT=1, THRE=1.","• uart_tx == 1'b1 during reset
+• LSR read returns TEMT=1, THRE=1
+• Interconnect routes read to m04 correctly
+• Bridge completes 64-to-32 bit read handshake","tb_uart_on_interconnect.sv
+Task: t1_reset_sanity()
+Tool: VCS U-2023.03",—
+3.2,UART–Interconnect – Bridge Reach: LCR Write + LSR Read (T2),"Internal Data Path
+(AXI master → bus m04 → bridge → UART)","Write 0x03 (8N1) to LCR via interconnect address 0x4000_000C, then read LSR at 0x4000_0014. Confirms that AXI writes and reads successfully traverse the full Master → Interconnect → Bridge → UART slave path.","• LCR write completes with BRESP = 2'b00
+• LSR read completes with RRESP = 2'b00
+• UART accepts LCR programming through bridge
+• No deadlock on either write or read channel","tb_uart_on_interconnect.sv
+Task: t2_bridge_reach()
+Tool: VCS U-2023.03",—
+3.3,UART–Interconnect – Baud Rate Programming via DLAB (T3),"Internal Data Path
+(On-chip DLAB latch & divisor register)","Execute DLAB sequence over interconnect: write LCR=0x83 (DLAB=1), write BAUD_DIV=10 at 0x4000_0008, write LCR=0x03 (DLAB=0). Verify LSR readback remains stable after baud reconfiguration.","• All 3 writes complete with BRESP = 2'b00
+• Baud divisor successfully latched in UART IP
+• LSR reads return expected idle state post-config
+• Bus remains responsive throughout DLAB sequence","tb_uart_on_interconnect.sv
+Task: t3_baud_config()
+Tool: VCS U-2023.03",—
+3.4,UART–Interconnect – TX→RX Serial Loopback (T4),"External Data Path
+(Physical uart_tx → uart_rx off-chip loop)","With uart_tx looped back to uart_rx externally in the testbench, write 0x41 ('A') to THR (0x4000_0000). Wait for transmission and reception. Poll LSR until DATA_READY asserts, then read RBR (0x4000_0000). Repeat with 0xA5.","• 0x41 transmitted, looped back, received: RBR == 0x41
+• 0xA5 transmitted, looped back, received: RBR == 0xA5
+• LSR DATA_READY bit asserts after each reception
+• Full loopback data integrity confirmed across bus","tb_uart_on_interconnect.sv
+Task: t4_tx_loopback()
+Tool: VCS U-2023.03",—
+3.5,UART–Interconnect – RX FIFO 4-Byte Burst + Drain (T5),"Internal & External Data Path
+(External RX serial burst + internal FIFO drain)","Inject four consecutive bytes (0x11, 0x22, 0x33, 0x44) via serial loopback into the UART RX FIFO through the interconnect. Read them back sequentially over AXI and verify correct FIFO ordering.","• FIFO byte 0 == 0x11
+• FIFO byte 1 == 0x22
+• FIFO byte 2 == 0x33
+• FIFO byte 3 == 0x44
+• FIFO drain via AXI reads maintains strict FIFO order
+• All 4 reads return RRESP = 2'b00","tb_uart_on_interconnect.sv
+Task: t5_rx_fifo()
+Tool: VCS U-2023.03",—
+3.6,UART–Interconnect – Interrupt Enable / Disable (T6),"Internal & External Data Path
+(Internal IER write + external uart_irq pin)","Write IER=0x00 (disable) via interconnect, send byte, verify uart_irq stays LOW. Then write IER=0x01 (enable), send byte, verify uart_irq asserts HIGH. Read RBR to clear the interrupt.","• IER=0: uart_irq == 1'b0 even when RX data arrives
+• IER=1: uart_irq asserts 1'b1 upon RX completion
+• RBR read clears the pending interrupt
+• Interrupt line behavior verified through bridge","tb_uart_on_interconnect.sv
+Task: t6_interrupt()
+Tool: VCS U-2023.03",—
+3.7,UART–Interconnect – Address Routing: Non-UART Slave (T7),"Internal Data Path
+(Crossbar isolation: m00 IMEM vs m04 UART)","Perform write and read to IMEM slave (m00, 0x0000_0000) through the interconnect while the UART is active. Verifies that the interconnect address decoder correctly isolates non-UART accesses.","• IMEM write and read complete with OKAY response
+• UART state unaffected by non-UART bus traffic
+• Address decode logic correctly isolates slave ports
+• No spurious UART transactions observed","tb_uart_on_interconnect.sv
+Task: t7_address_routing()
+Tool: VCS U-2023.03",—
+Group 4 — AXI GPIO Standalone Verification
+4.1,GPIO – Reset Verification,"Internal Data Path
+(AXI slave register power-on defaults)","Apply reset to axi_gpio and verify that all registers power up with correct default values (DATA=0x0000, DIR=0x0000, INT_EN=0x0000, INT_STATUS=0x0000) and that gpio_out is 0x0000.","• All registers read 0x0000 after reset release
+• gpio_out == 16'h0000 during and after reset
+• irq output == 1'b0
+• AXI channels respond with OKAY to post-reset reads","tb_axi_gpio_top.sv
+Task: test_reset()
+Tool: VCS U-2023.03",—
+4.2,GPIO – Direction Register Read/Write,"Internal Data Path
+(GPIO_DIR register configuration)","Write alternating bit patterns (0xAAAA, 0x5555) to the GPIO_DIR register and read back. Verify that each pin's direction (0=input, 1=output) is correctly set in hardware.","• GPIO_DIR read-back == 0x5555 after write
+• gpio_dir output == 0xAAAA
+• GPIO_DIR read-back == 0xAAAA after second write
+• BRESP/RRESP = 2'b00 for all accesses","tb_axi_gpio_top.sv
+Task: test_direction()
+Tool: VCS U-2023.03",—
+4.3,GPIO – Data Register Write and Output Readback,"External Data Path
+(gpio_out[15:0] pin driving & level verify)","Set all pins as outputs (DIR=0xFFFF), then write data patterns (0x1234, 0x5555) to GPIO_DATA. Verify that the gpio_out port drives the exact written value and that reading GPIO_DATA returns it.","• GPIO_DATA read-back == 0x1234 after write
+• gpio_out == 0x1234
+• gpio_out == 0x5555 after alternating pattern write
+• No bit flip or drive contention observed","tb_axi_gpio_top.sv
+Task: test_data()
+Tool: VCS U-2023.03",—
+4.4,GPIO – Input Synchronization and GPIO_IN Register,"External Data Path
+(gpio_in[15:0] pad input via 2-stage sync)",Set all pins as inputs (DIR=0x0000). Drive gpio_in = 0x00FF. Wait 3 clock cycles for the 2-stage synchronizer and verify that GPIO_IN reads back 0x00FF. Repeat with 0xFF00.,"• GPIO_IN reads back 0x00FF after 3-cycle synchronizer delay
+• GPIO_IN updates when gpio_in stimulus changes
+• Two-stage synchronizer prevents metastability propagation
+• Writing to GPIO_IN has no effect (read-only)","tb_axi_gpio_top.sv
+Task: test_input()
+Tool: VCS U-2023.03",—
+4.5,GPIO – Interrupt Generation and Write-1-to-Clear,"Internal & External Data Path
+(External pad edge transition + internal W1C)","Configure GPIO_INT_EN, drive gpio_in change, verify irq asserts. Read GPIO_INT_STATUS, write 1-to-clear to the active bit, and verify irq deasserts.","• irq asserts when enabled pin changes state
+• GPIO_INT_STATUS shows correct bit set
+• irq deasserts after W1C write to GPIO_INT_STATUS
+• Disabled pins do not trigger interrupts","tb_axi_gpio_top.sv
+Task: test_interrupt()
+Tool: VCS U-2023.03",—
+4.6,GPIO – Bidirectional Operation (Mixed Direction),"External Data Path
+(Mixed gpio_out[7:0] & gpio_in[15:8] pads)","Configure lower byte as outputs (DIR[7:0]=1), upper byte as inputs (DIR[15:8]=0). Drive gpio_in on upper byte, write lower byte via DATA register, verify both directions operate correctly.","• gpio_out[7:0] matches DATA[7:0]
+• GPIO_IN[15:8] matches gpio_in[15:8]
+• No cross-coupling between input and output bits
+• BRESP/RRESP = 2'b00 for all transactions","tb_axi_gpio_top.sv
+Task: test_bidirectional()
+Tool: VCS U-2023.03",—
+4.7,GPIO – Multiple Register Concurrent Access,"Internal Data Path
+(AXI slave register bank pipeline under load)","Sequentially access all 5 GPIO registers (DATA, DIR, IN, INT_EN, INT_STATUS) in rapid sequence to exercise the AXI FSM under load and verify no register aliasing or address decode errors.","• All 5 registers respond with RRESP/BRESP = 2'b00
+• No register aliasing (DIR write does not corrupt DATA)
+• GPIO_IN not modified by write attempts
+• INT_STATUS W1C works correctly in sequence","tb_axi_gpio_top.sv
+Task: test_multiple_registers()
+Tool: VCS U-2023.03",—
+Group 5 — VeeR EL2 CPU Firmware (C Tests - Core Standalone)
+5.1,CPU – Integer Arithmetic Test,"Internal Data Path
+(VeeR EL2 ALU ADD & stack memory)","RISC-V firmware computes a=10, b=20, sum=a+b and checks sum==30. Tests the ADD instruction and volatile memory variable handling. Returns 1 on failure; crt0.s writes that value to tohost.","• sum = a + b = 30 computed correctly
+• main() returns 0 on pass
+• tohost not written with fail code 0x01
+• LSU AXI write to tohost (0xD058_0000) monitored by TB","tb_cpu_uart_soc.sv
+Monitor: tohost AXI LSU write at 0xD058_0000
+Tool: VCS U-2023.03","hello.c — Test 1
+Compiler: riscv64-unknown-elf-gcc
+Flags: -march=rv32imc -mabi=ilp32 -O2
+Linker: hello.ld
+Hex: my_test/program.hex"
+5.2,CPU – Bitwise AND / Mask Test,"Internal Data Path
+(Core register file & logical unit)","Firmware computes mask=0xAA, val=0xFF & mask and checks val==0xAA. Exercises ANDI/AND instructions, verifies correct bit masking. Returns 2 on failure.","• val = 0xFF & 0xAA = 0xAA (bitwise AND correct)
+• main() does not return 2
+• Control flow past check verified by final tohost value","tb_cpu_uart_soc.sv
+Monitor: tohost AXI LSU write
+Tool: VCS U-2023.03","hello.c — Test 2
+Compiler: riscv64-unknown-elf-gcc
+Flags: -march=rv32imc -mabi=ilp32 -O2
+Linker: hello.ld
+Hex: my_test/program.hex"
+5.3,CPU – Loop Accumulator Test,"Internal Data Path
+(Core execution unit & branch logic)","Firmware runs a for-loop summing 0+1+...+9=45 into a volatile accumulator. Checks acc==45. Exercises ADDI, BLT, and loop back-edge branch instructions. Returns 3 on failure.","• Loop executes 10 iterations (i = 0..9)
+• acc == 45 at loop exit
+• main() does not return 3
+• BLT branch taken correctly on all iterations","tb_cpu_uart_soc.sv
+Monitor: tohost AXI LSU write
+Tool: VCS U-2023.03","hello.c — Test 3
+Compiler: riscv64-unknown-elf-gcc
+Flags: -march=rv32imc -mabi=ilp32 -O2
+Linker: hello.ld
+Hex: my_test/program.hex"
+5.4,CPU – Firmware Boot and tohost PASS Signal,"Internal Data Path
+(ICCM instruction fetch & LSU AXI write)","End-to-end CPU test: program.hex loaded into IMEM via $readmemh. VeeR EL2 boots from 0x0000_0000, crt0.s sets up stack, zeros BSS, calls main(). On return 0, crt0.s writes 0x01 to tohost at 0xD058_0000 via LSU AXI. TB monitors this write to declare PASS.","• VeeR EL2 fetches first instruction from IMEM[0]
+• Stack pointer set correctly by crt0.s
+• BSS zeroed before main() call
+• main() returns 0 (all 3 sub-tests pass)
+• tohost == 0x01 written via LSU AXI to 0xD058_0000
+• TB receives PASS before MAX_CYCLES (5 000 000) timeout","tb_cpu_uart_soc.sv
+Monitor: tohost AXI LSU write + UART TX monitor
+Tool: VCS U-2023.03","hello.c + crt0.s (startup)
+Compiler: riscv64-unknown-elf-gcc
+Linker: hello.ld
+Hex: my_test/program.hex"
+Group 6 — AXI UART Bridge Verification
+6.1,AXI UART Bridge – 64-bit → 32-bit Data Width Adaptation,"Internal Data Path
+(On-chip width converter & WSTRB mapping)",The axi_uart_bridge accepts 64-bit writes from the interconnect and forwards only the lower 32 bits to the AXI4-Lite UART. Verified implicitly through integration tests T2–T6 where 64-bit write data is correctly interpreted by all UART registers.,"• 64-bit data → lower 32 bits forwarded to UART correctly
+• Upper 32 bits discarded without UART side-effects
+• 8-byte strobe narrowed to 4-byte strobe for UART
+• Verified via LCR/IER/BAUD/THR writes in T2–T5","tb_uart_on_interconnect.sv
+Implicit in tasks: t2–t6
+Integration path: IC m04 → bridge → axi_uart_top
+Tool: VCS U-2023.03",—
+6.2,AXI UART Bridge – AR-Channel FSM (Read Request Hold),"Internal Data Path
+(Internal AXI AR latch & rvalid hold FSM)","The UART IP only asserts rvalid while arvalid is HIGH. The bridge must latch the AR request and hold arvalid until rvalid fires. Verified through every read in integration tests T1, T2, T4–T6.","• arvalid to UART held until rvalid asserts
+• rvalid fires correctly for every LSR/RBR read
+• No missed read responses
+• rlast driven constant 1 (single-beat UART reads)
+• ID extended from 8-bit (IC) to 12-bit (UART) correctly","tb_uart_on_interconnect.sv
+Implicit in tasks: t1, t2, t4, t5, t6
+Tool: VCS U-2023.03",—
+Group 7 — VeeR EL2 Core + Peripheral IPs Co-Verification (C Firmware & .hex Generation)
+7.1,"Core + AXI UART IP – Baud Config, Character TX/RX Loopback & DMEM Flag","Internal & External Data Path
+(Internal: LSU AXI @ 0x4000_0000; External: uart_tx → uart_rx pin loopback)","VeeR EL2 core executes C test (uart_test.c). CPU accesses UART over 64-bit LSU strided window (base 0x4000_0000), programs baud rate (DLAB=1, BAUD_DIV=50, DLAB=0, 8N1), enables RX interrupt in IER, writes 'A' (0x41) to THR, polls LSR until DATA_READY asserts, reads received character from RBR via serial loopback, writes 'B' (0x42) to THR, verifies character match ('A'), stores received byte and LSR to DMEM (0x1000_0000), and writes PASS flag (0x01) to DMEM (0x1000_0014).","• Core boots from ICCM (0xEE00_0000) and sets stack in DMEM (0x1000_0FF0)
+• AXI LSU issues 64-bit aligned reads/writes to UART registers (0x4000_0000)
+• Serial stream on uart_tx decoded: 'A' (0x41) and 'B' (0x42)
+• Serial loopback captured by uart_rx; LSR[0] (DATA_READY) asserts
+• Core reads RBR == 0x41 ('A'); verifies character match
+• DMEM[0x1000_0000]=0x41, DMEM[0x1000_0004]=0x60 (LSR), DMEM[0x1000_0014]=0x01 (PASS)","tb_cpu_uart_veer.sv
+Wrapper: soc_top_veer.sv
+Script: script/run_cpu_uart_veer.sh
+Tools: Vivado XSim / VCS","Source: my_test/uart_test.c + crt0.s
+Compiler: riscv64-unknown-elf-gcc
+Flags: -march=rv32imc -mabi=ilp32 -O2 -nostdlib
+Linker: soc_test.ld (ICCM @ 0xEE00_0000)
+Hex Command:
+python3 make_hex.py uart_test_c.elf uart_test_c.hex 0xEE000000 --width=4
+Hex File: my_test/uart_test.hex"
+7.2,"Core + AXI GPIO IP – Direction, Output LEDs, Input Switches & Atomic Bitops","Internal & External Data Path
+(Internal: LSU AXI @ 0x6000_0000; External: gpio_pads_o/i physical pins)","VeeR EL2 core executes C test (gpio_test.c). Core verifies GPIO_ID (0x4749504F = 'GPIO') and GPIO_VERSION (0x00010000). Programs GPIO_DIR for lower 8 bits output, upper 8 bits input (0x00FF). Writes 0x00A5 to GPIO_OUT. Exercises atomic registers: GPIO_OUT_SET (0x0050) -> OUT=0x00F5; GPIO_OUT_CLR (0x0005) -> OUT=0x00F0; GPIO_OUT_TOGGLE (0x0033) -> OUT=0x00C3. Samples external stimulus (0x5A00) from GPIO_IN. Writes logs and PASS flag (0x01) to DMEM (0x1000_0014).","• Core reads GPIO_ID == 0x4749504F and VERSION == 0x00010000
+• GPIO_DIR write to 0x00FF asserts external gpio_pads_oen = 0x00FF
+• GPIO_OUT write drives 0x00A5 onto external gpio_pads_o
+• Atomic SET mask 0x0050 updates OUT to 0x00F5
+• Atomic CLR mask 0x0005 updates OUT to 0x00F0
+• Atomic TOGGLE mask 0x0033 updates OUT to 0x00C3
+• External stimulus on gpio_pads_i correctly sampled into GPIO_IN
+• DMEM[0x1000_0014] written with PASS (0x01)","tb_cpu_gpio_veer.sv
+Wrapper: soc_top_veer.sv
+Script: script/run_cpu_gpio_veer.sh
+Tools: Vivado XSim / Icarus Verilog","Source: my_test/gpio_test.c + crt0.s
+Compiler: riscv64-unknown-elf-gcc
+Flags: -march=rv32imc -mabi=ilp32 -O2 -nostdlib
+Linker: soc_test.ld (ICCM @ 0xEE00_0000)
+Hex Command:
+python3 make_hex.py gpio_test_c.elf gpio_test_c.hex 0xEE000000 --width=4
+Hex File: my_test/gpio_test.hex"
+7.3,"Core + AXI Timer IP – Down-Counter, Compare Match, W1C Clear & IRQ","Internal & External Data Path
+(Internal: LSU AXI @ 0x5000_0000; External: timer_irq_o external interrupt pin)","VeeR EL2 core executes C test (timer_test.c). Verifies TIMER_ID (0x54494D52 = 'TIMR') and TIMER_VERSION (0x00010000). Programs TIMER_LOAD = 30 and TIMER_COMPARE = 15. Starts timer via TIMER_CTRL = 0x05 (enable=1, irq_en=1). Polls live down-counter TIMER_VALUE until it decrements past 15. Confirms TIMER_STATUS match flag bit 0 asserts and external timer_irq_o asserts HIGH. Writes 1 to TIMER_STATUS to clear match flag via W1C; verifies flag clears to 0 and timer_irq_o deasserts LOW. Writes PASS flag (0x01) to DMEM (0x1000_0014).","• Core reads TIMER_ID == 0x54494D52 and VERSION == 0x00010000
+• TIMER_LOAD and TIMER_COMPARE read back programmed values
+• Live TIMER_VALUE decrements cycle-by-cycle while running
+• TIMER_STATUS[0] asserts and timer_irq_o fires when counter hits 15
+• W1C write to TIMER_STATUS clears match flag and deasserts timer_irq_o
+• DMEM[0x1000_0014] written with PASS (0x01)","tb_cpu_timer_veer.sv
+Wrapper: soc_top_veer.sv
+Script: script/run_cpu_timer_veer.sh
+Tools: Vivado XSim / Icarus Verilog","Source: my_test/timer_test.c + crt0.s
+Compiler: riscv64-unknown-elf-gcc
+Flags: -march=rv32imc -mabi=ilp32 -O2 -nostdlib
+Linker: soc_test.ld (ICCM @ 0xEE00_0000)
+Hex Command:
+python3 make_hex.py timer_test_c.elf timer_test_c.hex 0xEE000000 --width=4
+Hex File: my_test/timer_test.hex"
+7.4,Core + AXI 7-Segment Display Controller – Digit Decode 0–9 & Dynamic Refresh,"Internal & External Data Path
+(Internal: LSU AXI @ 0x7000_0000; External: seven_seg_seg_o/an_o physical pins)","VeeR EL2 core executes C test (seven_seg_test.c). Programs SEVEN_SEG_DIG (0x00) with digits 0 through 9 sequentially, enables 4 display digits via SEVEN_SEG_EN (0x04 = 0x000F), and sets SEVEN_SEG_CTRL (0x14 = 0x0009) for display enable and fast simulation refresh. Testbench monitors external 7-segment cathode signals (seven_seg_seg_o), decimal point (seven_seg_dp_o), and active-low anode multiplexing signals (seven_seg_an_o). Sets final digit 7 and writes PASS flag to DMEM.","• Core writes digit values (0..9) to SEVEN_SEG_DIG
+• Cathode outputs seven_seg_seg_o match active-low font encoding (0->7'b1000000, 1->7'b1111001, 7->7'b1111000)
+• Anode outputs seven_seg_an_o cyclically refresh digits D0..D3 without flicker
+• Fast simulation mode activates divider bypass for fast TB verification
+• Final digit 7 displayed; DMEM[0x1000_0014] written with PASS (0x01)","tb_soc_mnist_veer.sv / tb_seven_seg_on_interconnect.sv
+Wrapper: soc_top_veer.sv
+Script: script/run_seven_seg_tb.sh
+Tools: Vivado XSim / VCS","Source: my_test/seven_seg_test.c + crt0.s
+Compiler: riscv64-unknown-elf-gcc
+Flags: -march=rv32imc -mabi=ilp32 -O2 -nostdlib
+Linker: soc_test.ld (ICCM @ 0xEE00_0000)
+Hex Command:
+python3 make_hex.py seven_seg_test.elf seven_seg_test.hex 0xEE000000 --width=4
+Hex File: my_test/seven_seg_test.hex"
+Group 8 — VeeR EL2 Core + Hardware Accelerators Co-Verification (C Firmware & .hex Generation)
+8.1,"Core + CNN Convolution Accelerator – 3x3 Kernel Weights, Bias & Parallel MAC","Internal Data Path
+(LSU AXI @ 0x3000_0000; on-chip parallel multiplier tree)","VeeR EL2 core executes C test (cnn_test.c). Core programs 9 signed weights into CNN kernel registers (0x18..0x38), writes signed bias into CNN_BIAS_REG (0x3C), and loads 3x3 pixel window patch into input registers (0x48..0x68). Core reads hardware convolution MAC product from CNN_RESULT_REG (0x6C), computes software convolution golden reference, verifies difference == 0, and writes PASS flag to DMEM (0x1000_0014).","• Kernel weight registers (0x18..0x38) and bias register (0x3C) accept 32-bit values
+• 3x3 input window accepted with BRESP = 2'b00
+• Hardware 9-multiplier parallel DSP array computes Y = Σ(W_i * P_i) + Bias in 1 clock
+• Core compares hardware result with software golden reference; exact match (difference == 0)
+• cnn_irq_o interrupt assertion on completion verified
+• DMEM[0x1000_0014] written with PASS (0x01)","tb_cnn_on_interconnect.sv / tb_soc_mnist_veer.sv
+Wrapper: soc_top_veer.sv
+Script: script/run_soc_mnist_veer.sh
+Tools: Vivado XSim / VCS","Source: my_test/cnn_test.c + crt0.s
+Compiler: riscv64-unknown-elf-gcc
+Flags: -march=rv32imc -mabi=ilp32 -O2 -nostdlib
+Linker: soc_test.ld (ICCM @ 0xEE00_0000)
+Hex Command:
+python3 make_hex.py cnn_test.elf cnn_test.hex 0xEE000000 --width=4
+Hex File: my_test/cnn_test.hex"
+8.2,"Core + ReLU Activation Accelerator – Positive Passthrough, Negative Clamping & Sparsity","Internal Data Path
+(LSU AXI @ 0x9000_0000; on-chip activation comparator)","VeeR EL2 core executes C test (relu_test.c). Core enables ReLU unit via RELU_CTRL_REG (0x9000_0000 = 0x01). Streams signed 32-bit test vectors into RELU_DIN_REG (0x08): positive integers, negative numbers, zero, and boundary limits. Reads back activated values from RELU_DOUT_REG (0x0C). Asserts that positive values pass unchanged, negative values clamp to 0, zero remains 0, and extreme negative 0x80000000 clamps to 0. Writes PASS flag to DMEM (0x1000_0014).","• Core enables ReLU unit via RELU_CTRL_REG = 0x0001
+• Positive input (+1250) passes through unaltered (DOUT = +1250)
+• Negative input (-840) is clamped to zero (DOUT = 0)
+• Zero input (0) produces zero (DOUT = 0)
+• Extreme signed boundary input (0x80000000) clamps to zero without underflow
+• DMEM[0x1000_0014] written with PASS (0x01)","tb_relu_on_interconnect.sv / tb_soc_mnist_veer.sv
+Wrapper: soc_top_veer.sv
+Script: script/run_relu_tb.sh
+Tools: Vivado XSim / Verilator","Source: my_test/relu_test.c + crt0.s
+Compiler: riscv64-unknown-elf-gcc
+Flags: -march=rv32imc -mabi=ilp32 -O2 -nostdlib
+Linker: soc_test.ld (ICCM @ 0xEE00_0000)
+Hex Command:
+python3 make_hex.py relu_test.elf relu_test.hex 0xEE000000 --width=4
+Hex File: my_test/relu_test.hex"
+8.3,Core + 2x2 Spatial Pooling Accelerator – Max/Avg Pooling & Spatial Downsampling,"Internal Data Path
+(LSU AXI @ 0xA000_0000; on-chip 2x2 comparator tree)","VeeR EL2 core executes C test (pooling_test.c). Core configures pooling mode via POOL_CTRL_REG (0xA000_0000 = 0x01 for Max Pooling). Streams 2x2 activation matrices by writing pixel pairs [q0, q1] into POOL_P01_REG (0x0C) and [q2, q3] into POOL_P23_REG (0x10). Reads back downsampled result from POOL_DOUT_REG (0x14). Verifies hardware output equals max(q0, q1, q2, q3) across all quadrant combinations including all-negative values. Writes PASS flag to DMEM.","• POOL_CTRL_REG configured for Max Pooling mode (mode 0)
+• Quadrant values {12, 45, 8, 30} produce DOUT = 45
+• Quadrant values {10, 20, 95, 40} produce DOUT = 95
+• Negative quadrant values {-50, -10, -25, -5} produce DOUT = -5
+• 2x2 spatial downsampling calculation executes in single clock cycle
+• DMEM[0x1000_0014] written with PASS (0x01)","tb_pooling_on_interconnect.sv / tb_soc_mnist_veer.sv
+Wrapper: soc_top_veer.sv
+Script: script/run_pooling_tb.sh
+Tools: Vivado XSim / VCS","Source: my_test/pooling_test.c + crt0.s
+Compiler: riscv64-unknown-elf-gcc
+Flags: -march=rv32imc -mabi=ilp32 -O2 -nostdlib
+Linker: soc_test.ld (ICCM @ 0xEE00_0000)
+Hex Command:
+python3 make_hex.py pooling_test.elf pooling_test.hex 0xEE000000 --width=4
+Hex File: my_test/pooling_test.hex"
+8.4,Core + AXI DMA Controller – Memory-to-Memory Transfer & Interconnect Master Bursts,"Internal Data Path
+(LSU AXI @ 0x2000_0000; DMA master 64-bit bursts to DMEM)","VeeR EL2 core executes C test (dma_test.c). Core populates source memory buffer in DMEM (0x1000_1000) with sequential test data and zeroes destination buffer (0x1000_2000). Programs DMA_SRC_ADDR, DMA_DST_ADDR, and DMA_LEN = 4 (64-bit beats). Triggers transfer via DMA_CTRL = 0x07 (enable=1, start=1, irq_en=1). Polls DMA_STATUS until done flag asserts. Clears interrupt status via W1C write to DMA_IRQ_STATUS. Compares destination buffer against source buffer to verify zero corruption. Writes PASS flag to DMEM.","• Core programs DMA registers (SRC, DST, LEN, CTRL) over AXI slave port m02
+• DMA Master gains bus access through round-robin arbiter
+• 4 sequential 64-bit burst beats read from SRC and written to DST
+• DMA_STATUS[1] (done) asserts; dma_irq_o fires
+• W1C write to DMA_IRQ_STATUS clears done flag and deasserts dma_irq_o
+• Destination buffer strictly matches source buffer; DMEM[0x1000_0014]=0x01 (PASS)","tb_dma_on_interconnect.sv
+Wrapper: soc_top_veer.sv
+Script: script/run_dma_on_interconnect.sh
+Tools: Vivado XSim / VCS","Source: my_test/dma_test.c + crt0.s
+Compiler: riscv64-unknown-elf-gcc
+Flags: -march=rv32imc -mabi=ilp32 -O2 -nostdlib
+Linker: soc_test.ld (ICCM @ 0xEE00_0000)
+Hex Command:
+python3 make_hex.py dma_test.elf dma_test.hex 0xEE000000 --width=4
+Hex File: my_test/dma_test.hex"
+Group 9 — VeeR EL2 Full SoC End-to-End System Integration Test (MNIST Inference Pipeline)
+9.1,Full SoC MNIST Handwritten Digit Recognition Pipeline (Core + All IPs),"Internal & External Data Path
+(Internal: Core <-> Interconnect <-> DMEM, CNN, ReLU, Pooling, Timer; External: UART TX/RX, GPIO LEDs, 7-Seg)","Complete end-to-end bare-metal firmware (mnist_inference.c) executing full MNIST digit recognition pipeline on VeeR EL2 core with all hardware accelerators:
+1. Initializes UART (8N1, baud div 50), GPIO (LEDs out), 7-Segment (D0 enable, fast_sim), ReLU, and Pooling.
+2. Programs trained CNN 3x3 filter weights (0x18..0x38) and bias (0x3C).
+3. Starts performance hardware Timer (TIMER_LOAD = 0x0FFFFFFF).
+4. Streams 28x28 grayscale sample image through 13x13 pooling regions: 3x3 receptive fields loaded into CNN accelerator, hardware convolution result piped into hardware ReLU unit, 2x2 activations loaded into hardware Pooling unit -> produces 169 pooled features in DMEM.
+5. VeeR EL2 executes Fully-Connected (FC) software classifier (10 classes x 169 weights + biases) to compute class logits and argmax predicted digit.
+6. Outputs recognized digit to 7-Segment Display Controller.
+7. Prints predicted digit, expected digit, and elapsed cycle count to UART.
+8. Asserts GPIO LEDs (0x00AA on pass, 0x00FF on fail) and writes DMEM_PASS_FLAG = 1.","• Core boots from ICCM (0xEE00_0000) and orchestrates all 9 slave peripherals over AXI crossbar
+• CNN + ReLU + Pooling hardware acceleration executes without bus hang or starvation
+• Software FC classification calculates predicted digit (e.g., Digit '7')
+• Predicted digit matches EXPECTED_DIGIT (predicted == 7)
+• Seven-Segment display shows predicted digit on physical/simulated display
+• UART terminal receives ASCII report with digit and execution cycle benchmark
+• GPIO LEDs output 0x00AA (PASS pattern)
+• DMEM_PASS_FLAG (0x1000_0014) written with 1; testbench declares simulation PASS","tb_soc_mnist_veer.sv
+Wrapper: soc_top_veer.sv
+Script: script/run_soc_mnist_veer.sh
+Host: script/uart_mnist_host.py
+Tools: Vivado XSim / VCS","Source: my_test/mnist_inference.c + crt0.s + mnist_data.h
+Compiler: riscv64-unknown-elf-gcc
+Flags: -march=rv32imc -mabi=ilp32 -O2 -nostdlib
+Linker: soc_test.ld (ICCM @ 0xEE00_0000)
+Hex Command:
+python3 make_hex.py mnist_inference.elf mnist_inference.hex 0xEE000000 --width=4
+Hex File: my_test/mnist_inference.hex"
