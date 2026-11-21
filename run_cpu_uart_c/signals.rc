@@ -1,0 +1,90 @@
+; =============================================================================
+; signals.rc - Complete Verdi Signal Layout for VeeR EL2 SoC + C Test
+; =============================================================================
+Magic 271485
+
+; -----------------------------------------------------------------------------
+; Group 1: Global Clock & Reset
+; -----------------------------------------------------------------------------
+addGroup "1. Clock & Reset"
+addSignal -h 15 -color Green /tb_cpu_uart_veer/clk
+addSignal -h 15 -color Orange /tb_cpu_uart_veer/rst
+
+; -----------------------------------------------------------------------------
+; Group 2: Core to AXI Interconnect (VeeR EL2 LSU Master 1)
+; -----------------------------------------------------------------------------
+addGroup "2. Core -> AXI Interconnect (LSU Master)"
+addSignal -h 15 -HEX -color Purple /tb_cpu_uart_veer/dut/lsu_axi_awaddr
+addSignal -h 15 /tb_cpu_uart_veer/dut/lsu_axi_awvalid
+addSignal -h 15 /tb_cpu_uart_veer/dut/lsu_axi_awready
+addSignal -h 15 -HEX -color Purple /tb_cpu_uart_veer/dut/lsu_axi_wdata
+addSignal -h 15 -HEX /tb_cpu_uart_veer/dut/lsu_axi_wstrb
+addSignal -h 15 /tb_cpu_uart_veer/dut/lsu_axi_wvalid
+addSignal -h 15 /tb_cpu_uart_veer/dut/lsu_axi_wready
+addSignal -h 15 /tb_cpu_uart_veer/dut/lsu_axi_bvalid
+addSignal -h 15 /tb_cpu_uart_veer/dut/lsu_axi_bready
+addSignal -h 15 -HEX /tb_cpu_uart_veer/dut/lsu_axi_bresp
+addSignal -h 15 -HEX -color Blue /tb_cpu_uart_veer/dut/lsu_axi_araddr
+addSignal -h 15 /tb_cpu_uart_veer/dut/lsu_axi_arvalid
+addSignal -h 15 /tb_cpu_uart_veer/dut/lsu_axi_arready
+addSignal -h 15 -HEX -color Blue /tb_cpu_uart_veer/dut/lsu_axi_rdata
+addSignal -h 15 /tb_cpu_uart_veer/dut/lsu_axi_rvalid
+addSignal -h 15 /tb_cpu_uart_veer/dut/lsu_axi_rready
+
+; -----------------------------------------------------------------------------
+; Group 3: AXI Interconnect to UART Subsystem (Slave Port m04)
+; -----------------------------------------------------------------------------
+addGroup "3. AXI Interconnect -> UART Subsystem (m04)"
+addSignal -h 15 -HEX /tb_cpu_uart_veer/dut/uart_bridge/s_axi_awaddr
+addSignal -h 15 /tb_cpu_uart_veer/dut/uart_bridge/s_axi_awvalid
+addSignal -h 15 /tb_cpu_uart_veer/dut/uart_bridge/s_axi_awready
+addSignal -h 15 -HEX /tb_cpu_uart_veer/dut/uart_bridge/s_axi_wdata
+addSignal -h 15 -HEX /tb_cpu_uart_veer/dut/uart_bridge/s_axi_wstrb
+addSignal -h 15 /tb_cpu_uart_veer/dut/uart_bridge/s_axi_wvalid
+addSignal -h 15 /tb_cpu_uart_veer/dut/uart_bridge/s_axi_wready
+addSignal -h 15 /tb_cpu_uart_veer/dut/uart_bridge/s_axi_bvalid
+addSignal -h 15 /tb_cpu_uart_veer/dut/uart_bridge/s_axi_bready
+addSignal -h 15 -HEX /tb_cpu_uart_veer/dut/uart_bridge/s_axi_araddr
+addSignal -h 15 /tb_cpu_uart_veer/dut/uart_bridge/s_axi_arvalid
+addSignal -h 15 /tb_cpu_uart_veer/dut/uart_bridge/s_axi_arready
+addSignal -h 15 -HEX /tb_cpu_uart_veer/dut/uart_bridge/s_axi_rdata
+addSignal -h 15 /tb_cpu_uart_veer/dut/uart_bridge/s_axi_rvalid
+addSignal -h 15 /tb_cpu_uart_veer/dut/uart_bridge/s_axi_rready
+
+; -----------------------------------------------------------------------------
+; Group 4: UART IP Core Registers (Internal LCR, Divisor, FIFOs)
+; -----------------------------------------------------------------------------
+addGroup "4. UART IP Registers (axi_uart_top)"
+addSignal -h 15 -HEX /tb_cpu_uart_veer/dut/uart_bridge/uart_awaddr
+addSignal -h 15 -HEX /tb_cpu_uart_veer/dut/uart_bridge/uart_wdata
+addSignal -h 15 -HEX /tb_cpu_uart_veer/dut/uart_bridge/uart_araddr
+addSignal -h 15 -HEX /tb_cpu_uart_veer/dut/uart_bridge/uart_rdata
+addSignal -h 15 -HEX -color Red /tb_cpu_uart_veer/dut/uart_bridge/uart_top/uart_config_reg_int
+addSignal -h 15 -HEX -color Red /tb_cpu_uart_veer/dut/uart_bridge/uart_top/uart_baudrate_div_int
+addSignal -h 15 -color Red      /tb_cpu_uart_veer/dut/uart_bridge/uart_top/uart_irq_en_int
+addSignal -h 15 -HEX -color Red /tb_cpu_uart_veer/dut/uart_bridge/uart_top/tx_fifo_data_in_int
+addSignal -h 15 -HEX -color Red /tb_cpu_uart_veer/dut/uart_bridge/uart_top/rx_fifo_data_out_int
+
+; -----------------------------------------------------------------------------
+; Group 5: External SoC Signals (In/Out Data Path)
+; -----------------------------------------------------------------------------
+addGroup "5. External SoC Data Path"
+addSignal -h 15 -color Yellow /tb_cpu_uart_veer/uart_tx
+addSignal -h 15 -color Cyan   /tb_cpu_uart_veer/uart_rx
+addSignal -h 15 -color Red    /tb_cpu_uart_veer/uart_irq
+
+; -----------------------------------------------------------------------------
+; Group 6: 10-Bit Serial Pulse Breakdown (Transmitter & Receiver Internal)
+; -----------------------------------------------------------------------------
+addGroup "6. 10-Bit Serial Pulse Breakdown"
+addSignal -h 15 -color Yellow /tb_cpu_uart_veer/uart_tx
+addSignal -h 15 -color Orange /tb_cpu_uart_veer/dut/uart_bridge/uart_top/uart_controller_inst/uart_transmitter_inst/busy_o
+addSignal -h 15 -HEX -color Pink /tb_cpu_uart_veer/dut/uart_bridge/uart_top/uart_controller_inst/uart_transmitter_inst/state
+addSignal -h 15 -HEX -color Green /tb_cpu_uart_veer/dut/uart_bridge/uart_top/uart_controller_inst/uart_transmitter_inst/tx_data_i
+addSignal -h 15 -UNSIGNED -color Cyan /tb_cpu_uart_veer/dut/uart_bridge/uart_top/uart_controller_inst/uart_transmitter_inst/bitcount_int
+addSignal -h 15 -HEX -color Yellow /tb_cpu_uart_veer/dut/uart_bridge/uart_top/uart_controller_inst/uart_transmitter_inst/tx_data_int
+addSignal -h 15 -UNSIGNED -color Blue /tb_cpu_uart_veer/dut/uart_bridge/uart_top/uart_controller_inst/uart_transmitter_inst/counter_int
+addSignal -h 15 -color Cyan   /tb_cpu_uart_veer/uart_rx
+addSignal -h 15 -UNSIGNED -color Cyan /tb_cpu_uart_veer/dut/uart_bridge/uart_top/uart_controller_inst/uart_receiver_inst/bitcount_int
+addSignal -h 15 -HEX -color Green /tb_cpu_uart_veer/dut/uart_bridge/uart_top/uart_controller_inst/uart_receiver_inst/rx_data_o
+addSignal -h 15 -color Red /tb_cpu_uart_veer/dut/uart_bridge/uart_top/uart_controller_inst/uart_receiver_inst/rx_valid_o

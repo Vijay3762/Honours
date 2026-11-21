@@ -21,6 +21,12 @@ package uart_pkg;
   `include "uart_sequence.sv"
   `include "uart_test.sv"
 
+  `include "soc_uart_monitor.sv"
+  `include "soc_uart_agent.sv"
+  `include "soc_uart_scoreboard.sv"
+  `include "soc_uart_env.sv"
+  `include "soc_uart_test.sv"
+
 endpackage : uart_pkg
 
 `endif // UART_PKG_SV

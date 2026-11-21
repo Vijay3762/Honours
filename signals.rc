@@ -1,0 +1,74 @@
+; =============================================================================
+; signals.rc - Complete Verdi Signal Layout for VeeR EL2 SoC + UVM UART VIP
+; =============================================================================
+Magic 271485
+
+; -----------------------------------------------------------------------------
+; Group 1: Global Clock & Reset
+; -----------------------------------------------------------------------------
+addGroup "1. Clock & Reset"
+addSignal -h 15 -color Green /soc_tb_top/clk
+addSignal -h 15 -color Orange /soc_tb_top/rstn
+addSignal -h 15 -color Orange /soc_tb_top/rst
+
+; -----------------------------------------------------------------------------
+; Group 2: Core to AXI Interconnect (VeeR EL2 LSU Master 1)
+; -----------------------------------------------------------------------------
+addGroup "2. Core -> AXI Interconnect (LSU Master)"
+addSignal -h 15 -HEX -color Purple /soc_tb_top/dut/lsu_axi_awaddr
+addSignal -h 15 /soc_tb_top/dut/lsu_axi_awvalid
+addSignal -h 15 /soc_tb_top/dut/lsu_axi_awready
+addSignal -h 15 -HEX -color Purple /soc_tb_top/dut/lsu_axi_wdata
+addSignal -h 15 -HEX /soc_tb_top/dut/lsu_axi_wstrb
+addSignal -h 15 /soc_tb_top/dut/lsu_axi_wvalid
+addSignal -h 15 /soc_tb_top/dut/lsu_axi_wready
+addSignal -h 15 /soc_tb_top/dut/lsu_axi_bvalid
+addSignal -h 15 /soc_tb_top/dut/lsu_axi_bready
+addSignal -h 15 -HEX /soc_tb_top/dut/lsu_axi_bresp
+addSignal -h 15 -HEX -color Blue /soc_tb_top/dut/lsu_axi_araddr
+addSignal -h 15 /soc_tb_top/dut/lsu_axi_arvalid
+addSignal -h 15 /soc_tb_top/dut/lsu_axi_arready
+addSignal -h 15 -HEX -color Blue /soc_tb_top/dut/lsu_axi_rdata
+addSignal -h 15 /soc_tb_top/dut/lsu_axi_rvalid
+addSignal -h 15 /soc_tb_top/dut/lsu_axi_rready
+
+; -----------------------------------------------------------------------------
+; Group 3: AXI Interconnect to UART Subsystem (Slave Port m04)
+; -----------------------------------------------------------------------------
+addGroup "3. AXI Interconnect -> UART Subsystem (m04)"
+addSignal -h 15 -HEX /soc_tb_top/dut/uart_bridge/s_axi_awaddr
+addSignal -h 15 /soc_tb_top/dut/uart_bridge/s_axi_awvalid
+addSignal -h 15 /soc_tb_top/dut/uart_bridge/s_axi_awready
+addSignal -h 15 -HEX /soc_tb_top/dut/uart_bridge/s_axi_wdata
+addSignal -h 15 -HEX /soc_tb_top/dut/uart_bridge/s_axi_wstrb
+addSignal -h 15 /soc_tb_top/dut/uart_bridge/s_axi_wvalid
+addSignal -h 15 /soc_tb_top/dut/uart_bridge/s_axi_wready
+addSignal -h 15 /soc_tb_top/dut/uart_bridge/s_axi_bvalid
+addSignal -h 15 /soc_tb_top/dut/uart_bridge/s_axi_bready
+addSignal -h 15 -HEX /soc_tb_top/dut/uart_bridge/s_axi_araddr
+addSignal -h 15 /soc_tb_top/dut/uart_bridge/s_axi_arvalid
+addSignal -h 15 /soc_tb_top/dut/uart_bridge/s_axi_arready
+addSignal -h 15 -HEX /soc_tb_top/dut/uart_bridge/s_axi_rdata
+addSignal -h 15 /soc_tb_top/dut/uart_bridge/s_axi_rvalid
+addSignal -h 15 /soc_tb_top/dut/uart_bridge/s_axi_rready
+
+; -----------------------------------------------------------------------------
+; Group 4: UART IP Core (AXI-Lite & Internal Registers)
+; -----------------------------------------------------------------------------
+addGroup "4. UART IP Registers (axi_uart_top)"
+addSignal -h 15 -HEX /soc_tb_top/dut/uart_bridge/uart_awaddr
+addSignal -h 15 -HEX /soc_tb_top/dut/uart_bridge/uart_wdata
+addSignal -h 15 -HEX /soc_tb_top/dut/uart_bridge/uart_araddr
+addSignal -h 15 -HEX /soc_tb_top/dut/uart_bridge/uart_rdata
+addSignal -h 15 -HEX -color Red /soc_tb_top/dut/uart_bridge/uart_top/u_uart_ctrl/lcr_reg
+addSignal -h 15 -HEX -color Red /soc_tb_top/dut/uart_bridge/uart_top/u_uart_ctrl/lsr_reg
+addSignal -h 15 -HEX -color Red /soc_tb_top/dut/uart_bridge/uart_top/u_uart_ctrl/baud_div_reg
+addSignal -h 15 -HEX -color Red /soc_tb_top/dut/uart_bridge/uart_top/u_uart_ctrl/ier_reg
+
+; -----------------------------------------------------------------------------
+; Group 5: Signals Between UART IP and UVM VIP (External Data Path)
+; -----------------------------------------------------------------------------
+addGroup "5. UART IP <-> UVM VIP (External Data Path)"
+addSignal -h 15 -color Yellow /soc_tb_top/vif/uart_tx_o
+addSignal -h 15 -color Cyan   /soc_tb_top/vif/uart_rx_i
+addSignal -h 15 -color Red    /soc_tb_top/dut/uart_irq_o

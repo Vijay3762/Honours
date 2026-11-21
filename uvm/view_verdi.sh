@@ -17,7 +17,9 @@ if [[ ! -f "dump.fsdb" ]]; then
 fi
 
 echo "Opening Verdi with dump.fsdb and design database..."
-if [[ -d "simv.daidir" ]]; then
+if [[ -d "simv_soc_uvm.daidir" ]]; then
+  verdi -simflow -dbdir simv_soc_uvm.daidir -ssf dump.fsdb -sswr signals.rc &
+elif [[ -d "simv.daidir" ]]; then
   verdi -simflow -dbdir simv.daidir -ssf dump.fsdb -sswr signals.rc &
 else
   verdi -ssf dump.fsdb -sswr signals.rc &
